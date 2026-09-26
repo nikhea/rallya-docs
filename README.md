@@ -33,8 +33,8 @@ are registered in order in `content/docs/meta.json`. Source config is in
 - **Copy page menu** — `components/page-actions.tsx` on every docs page: copy
   as Markdown, view as Markdown, open in Claude, open in Codex.
 - **LLM endpoints** — `/llms.txt` (index), `/llms-full.txt` (whole corpus),
-  per-page Markdown at `/docs/<page>.md` (rewrite → `app/llms.mdx/...`),
-  documented at `/docs/llms-txt`.
+  per-page Markdown at `/docs/<page>.md` (rewrite → `app/llms.mdx/...`).
+  See [Using Docs with AI](content/docs/llms-txt.mdx) for details.
 - **Home redirect** — `/` → `/docs` (permanent, in `next.config.ts` +
   `app/page.tsx`).
 
