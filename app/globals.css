@@ -3,6 +3,14 @@
 @import "fumadocs-ui/css/preset.css";
 @source "../node_modules/fumadocs-ui/dist";
 
+/* Cap the mobile drawer: full-screen nav is hard to dismiss and dwarfs
+   the content toggle. Desktop keeps the stock 268px sidebar. */
+@media (max-width: 767px) {
+  #nd-sidebar {
+    width: min(85vw, 320px);
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
