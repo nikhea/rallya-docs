@@ -1,0 +1,51 @@
+---
+title: SDKs
+description: Typed clients for TypeScript and Go.
+---
+
+## TypeScript — `@rallya/sdk`
+
+```bash
+npm i @rallya/sdk
+```
+
+```ts
+import { RallyaClient } from "@rallya/sdk";
+
+let tokens = null;
+const client = new RallyaClient({
+  baseUrl: "http://localhost:8080/api/v1",
+  getTokens: () => tokens,
+  setTokens: (t) => { tokens = t; },
+});
+
+tokens = await client.auth.login({ email, password });
+await client.events.listPublic({ q: "jazz" });
+await client.kits.collect("acme", "fest", kitId, { attendeeId });
+await client.subscriptions.checkout("acme", "PRO");
+```
+
+Zero runtime dependencies, auto `401 → refresh → retry`, `X-API-Key`
+mode for servers (`new RallyaClient({ baseUrl, apiKey })`), Stripe webhook
+helper under `@rallya/sdk/node`. Every API failure throws `RallyaError`
+with `status/code/retryAfterMs`.
+
+## Go — `rallya-go-sdk`
+
+```bash
+go get github.com/nikhea/rallya-go-sdk
+```
+
+```go
+store := rallya.NewMemoryTokenStore(nil)
+client, _ := rallya.NewClient(rallya.Options{
+    BaseURL: "http://localhost:8080/api/v1",
+    GetTokens: store.GetTokens, SetTokens: store.SetTokens,
+})
+me, _ := client.Auth.Me(ctx)
+collected, _ := client.Kits.Collect(ctx, "acme", "fest", kitID,
+    rallya.CollectKitInput{AttendeeID: id})
+```
+
+Stdlib-only, same refresh semantics, `*rallya.RallyaError` failures, and a
+`webhooks` package for Stripe verification.

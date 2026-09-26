@@ -1,0 +1,37 @@
+---
+title: Operations
+description: Migrations, environments, gates, and release order.
+---
+
+## Migrations
+
+`migrations/*.up.sql` is the single source of truth. Never edit an applied
+file — add a new version. The only schema path:
+
+```bash
+make migrate-up        # golang-migrate (app) + rivermigrate (queue)
+make migrate-down      # roll back one
+make migrate-version   # report both engines
+```
+
+The API never migrates on boot, dev or prod. Boot order is the release
+order: `db + redis → migrate → api`.
+
+## Gates
+
+All must pass before finishing work:
+
+```bash
+make fmt-check && make lint && make vet && make build && make test
+```
+
+Tests run on in-memory SQLite per suite (`SetMaxOpenConns(1)`) and pass
+under `-race`.
+
+## Conventions for contributors
+
+- Branch per module (`feature/<name>`); commit messages match repo style.
+- Never commit `.env`, `tmp/`, `uploads/`. Fixtures use placeholders.
+- Swagger annotations on every route; regenerate after behavior changes
+  (`swag init -g cmd/api/main.go -o docs`), never hand-edit `docs/`.
+- Per-module `README.md` + nearest `AGENTS.md` before touching a domain.

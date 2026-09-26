@@ -1,0 +1,35 @@
+---
+title: API Conventions
+description: Envelopes, stealth 404s, billing codes, pagination, and limits.
+---
+
+## Envelopes
+
+Failures return `{error}` or `{error, code}`. Billing adds machine codes:
+`UPGRADE_REQUIRED` (402), `BILLING_UNAVAILABLE` (503), `ALREADY_SUBSCRIBED`
+(409), `INVALID_PLAN` (400). Rate limits (429) carry `Retry-After`.
+
+## Stealth 404s
+
+Orgs, events, and others' orders return 404 for "not found **or** no
+access" — never confirm existence to outsiders. SDKs expose an
+`isNotFoundOrForbidden` helper; use it instead of treating 404 as absence.
+
+## Pagination
+
+List routes take `{page, perPage}` (defaults 1/20, max 100) and return
+`{items, total, page, perPage}`.
+
+## Rate limits
+
+Two tiers: strict for auth endpoints (login brute-force protection),
+generous default elsewhere. Redis-shared when connected, in-process
+otherwise. Keys derive from real client IPs (`TRUSTED_PROXIES` when behind
+a proxy).
+
+## Full reference
+
+These guides explain; Swagger specifies. Live reference (generated from
+code, always current):
+
+`http://localhost:8080/swagger/index.html`
