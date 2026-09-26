@@ -1,4 +1,6 @@
 import { source } from "@/lib/source";
+import { getPageMarkdownUrl } from "@/lib/shared";
+import { PageActions } from "@/components/page-actions";
 import {
   DocsBody,
   DocsDescription,
@@ -16,9 +18,13 @@ export default async function Page(props: {
   if (!page) notFound();
 
   const MDX = page.data.body;
+  const markdownUrl = getPageMarkdownUrl(page).url;
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
+      <div className="flex flex-row items-center justify-end gap-2 border-b pb-6">
+        <PageActions markdownUrl={markdownUrl} />
+      </div>
       <DocsTitle>{page.data.title}</DocsTitle>
       <DocsDescription>{page.data.description}</DocsDescription>
       <DocsBody>

@@ -1,0 +1,51 @@
+---
+title: Using Docs with AI
+description: llms.txt, per-page Markdown, and the Copy page menu for LLMs and agents.
+---
+
+These docs are published in LLM-friendly formats, so you can paste them into
+ChatGPT, Claude, Codex, or point an agent at them directly.
+
+## Copy page menu
+
+Every page has a **Copy page** button (top-right) with four actions:
+
+- **Copy page** — copies the current page as Markdown, ready to paste into an LLM.
+- **View as Markdown** — opens the page as plain text.
+- **Open in Claude** — opens Claude with a prompt referencing the current page.
+- **Open in Codex** — opens Codex in ChatGPT with a prompt referencing the current page.
+
+## llms.txt
+
+An index of every page (title, description, URL), following the
+[llms.txt convention](https://llmstxt.org/):
+
+```text
+https://<your-docs-domain>/llms.txt
+```
+
+Point an agent at it to let it discover pages, or paste it into a chat to give
+the model the full table of contents.
+
+## llms-full.txt
+
+The entire docs set rendered as Markdown in a single file:
+
+```text
+https://<your-docs-domain>/llms-full.txt
+```
+
+Use it when you want the model to have the whole docs corpus in context at
+once (watch the token budget — it is one large file).
+
+## Per-page Markdown
+
+Any docs page has a Markdown twin — append `.md` to its URL:
+
+```text
+/docs/events      →  /docs/events.md
+/docs/quickstart  →  /docs/quickstart.md
+```
+
+The response is `Content-Type: text/markdown` and contains the processed page
+content (same source the **Copy page** button uses).
