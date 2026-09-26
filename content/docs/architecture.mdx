@@ -1,0 +1,44 @@
+---
+title: Architecture
+description: Modular monolith, seams, and cross-cutting rules.
+---
+
+## Modular monolith
+
+Gin + Postgres + River queue + Casbin, in Go. One deployable, strict
+module boundaries: `internal/<domain>/{model,repository,service,handler,
+dto,routes.go}`. Dependency flows one way:
+
+```
+Events → Organization/IAM → Auth
+```
+
+## Seams, not imports
+
+Domains talk through **consumer-declared interfaces** (`UserReader`,
+`CheckinApplier`, `EntitlementProvider`, `AttendeeMinter`). No cross-domain
+table joins, no service-to-service imports. Wiring happens in
+`cmd/api/main.go` only — thin wiring, no logic.
+
+## Data rules
+
+- `migrations/*.up.sql` is the single source of truth. Never edit an
+  applied file; `go run ./cmd/migrate up` is the only schema path.
+  Never `AutoMigrate` outside tests.
+- DTOs live in `dto/` (unique package names per domain — swag fails on
+  duplicates). Services return sentinels (`errors.go`); handlers map to HTTP.
+- Errors: `{error}` / `{error, code}` envelopes; stealth 404s for outsiders
+  (orgs, events, others' orders read "not found" with no access).
+- Audit trail: mutating domains emit inside their tx (loud beats gappy).
+
+## Background work
+
+River runs in-process: email jobs (verification, invites, confirmations),
+the order hold sweeper (every 5 min). Producers enqueue transactionally;
+workers render templates and send (log-only without SMTP).
+
+## Enforcement stack
+
+`RequireAuth → RequireOrgContext → RequirePermission(obj, act)` on
+org-scoped routes. Public routes (discovery, plans, webhooks) skip auth.
+Rate limiting is Redis-shared when connected, in-process otherwise.

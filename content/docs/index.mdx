@@ -1,6 +1,43 @@
 ---
-title: Rallya Documentation
-description: Guides for organizers, door staff, and developers building on the Rallya event platform.
+title: Overview
+description: What Rallya is, who it serves, and how the pieces fit.
 ---
 
-Welcome to the Rallya docs. Start with the quickstart, or jump to a domain.
+Rallya is a **multi-tenant event platform**: organizations sell tickets,
+check in attendees at the door, hand out merch kits, and run subscription
+billing — all behind one API (`/api/v1`).
+
+## Who it serves
+
+- **Organizers** — create events, price tickets, track sales, manage staff.
+- **Door staff** — scan QR codes, handle walk-ins, hand out kits on tablets.
+- **Attendees** — buy tickets (one-off checkout, never a subscription),
+  get QR codes by email, collect kits.
+- **Developers** — typed SDKs for TypeScript and Go, webhooks, API keys.
+
+## System map
+
+```
+Auth (identity) → Organization (tenants) → IAM (permissions)
+      → Events → Ticketing → Orders → Attendees → Check-in
+                                              → Kits
+      → Subscriptions (org tiers, Stripe Billing)
+```
+
+- **Auth** owns identity: register, verify, login, refresh rotation, logout.
+- **Organization** owns tenants: orgs, memberships, invites, custom roles.
+- **IAM** enforces: Casbin RBAC, per-org policies, superadmins.
+- **Events** are org-scoped: draft → published lifecycle, covers, discovery.
+- **Ticketing → Orders → Payments**: inventory claims, Stripe Checkout.
+- **Attendees → Check-in**: QR door records, scan outcomes, kit eligibility.
+- **Kits**: named merch types with per-attendee collection records.
+- **Subscriptions**: FREE/PRO/SCALE tiers gating organizer quotas and
+  features. Attendee payment stays one-off.
+
+## Base URLs
+
+- API: `http://localhost:8080/api/v1` (dev), health at `GET /health`.
+- Swagger UI: `http://localhost:8080/swagger/index.html` (generated, always
+  current — these guides explain; Swagger specifies).
+- SDKs: `@rallya/sdk` ([npm](https://www.npmjs.com/package/@rallya/sdk))
+  and the Go SDK.

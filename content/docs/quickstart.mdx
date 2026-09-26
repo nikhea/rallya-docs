@@ -1,0 +1,54 @@
+---
+title: Quickstart
+description: Run the full stack locally in minutes.
+---
+
+## Option A — Docker Compose (recommended)
+
+```bash
+cd rallya
+cp .env.example .env   # fill secrets; .env is gitignored, never committed
+docker compose up --build
+curl localhost:8080/health
+```
+
+Boot order is the release order: `db + redis → migrate → api`.
+The API never migrates on boot.
+
+```bash
+docker compose down -v   # full reset (drops pgdata + redisdata)
+```
+
+## Option B — Local Go (needs Postgres + optional Redis)
+
+```bash
+cp .env.example .env
+# point DATABASE_URL at Postgres, REDIS_URL at Redis (or leave unset)
+go run ./cmd/migrate up   # or: make migrate-up
+go run ./cmd/api          # or: make api
+```
+
+## First flow (5 minutes)
+
+1. `POST /api/v1/auth/register` with email + password.
+2. Verify: pull the token from the `send_verification_email` River job
+   (mail is log-only without SMTP) and `POST /auth/verify-email`.
+3. `POST /auth/login` → store the token pair.
+4. `POST /orgs` → create your org.
+5. `POST /orgs/:id/events` → draft, then `.../publish`.
+6. `POST .../tickets` → define a free tier, `.../activate`.
+7. `POST /events/:id/orders` → free order confirms immediately.
+8. `POST .../checkin` with the attendee ID → `CHECKED_IN`.
+
+## Configuration
+
+All env-driven (`cmd/config`, see `.env.example`). Essentials:
+
+| Var | Purpose |
+|---|---|
+| `DATABASE_URL` | Postgres DSN (fatal if unreachable) |
+| `JWT_SECRET` / `QR_SIGNING_SECRET` | 32+ byte secrets, fail-closed |
+| `STRIPE_SECRET_KEY` | Unset = checkout 503s, boot unaffected |
+| `STRIPE_PRICE_PRO` / `STRIPE_PRICE_SCALE` | Recurring prices for org tiers |
+| `REDIS_URL` | Unset = memory rate-limit store |
+| `SUPERADMIN_EMAILS` | Bootstrap platform admins |
