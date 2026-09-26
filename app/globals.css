@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
 
+/* Docs sidebar spans 60% of the layout on large screens (overrides the
+   stock 268px --fd-sidebar-width; mobile drawer behavior untouched). */
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 60%;
+  }
+}
+@import "fumadocs-ui/css/preset.css";
+@source "../node_modules/fumadocs-ui/dist";
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -24,4 +34,11 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+@media (max-width: 767px) {
+  aside {
+    inset-inline-start: 0;
+    inset-inline-end: auto;
+  }
 }
