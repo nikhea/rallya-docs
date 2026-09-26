@@ -1,0 +1,83 @@
+---
+title: Schemas
+description: Core object shapes with required fields and enums.
+---
+
+`*` = required. Timestamps are RFC 3339 strings. IDs are UUIDs unless a
+route documents UUID-or-slug. Full machine truth: Swagger
+`/swagger/index.html` (99 definitions).
+
+## Auth
+
+**TokenPair** — `*accessToken, *refreshToken`
+
+**Me** — `*id, *email, *emailVerified, *profile{firstName?, lastName?}, organizations[]?`
+(`organizations` omitted when unwired; each `{id, slug, name, role}`)
+
+**Error envelope** — `{error, code?}`. Billing codes: `UPGRADE_REQUIRED`
+(402), `BILLING_UNAVAILABLE` (503), `ALREADY_SUBSCRIBED` (409),
+`INVALID_PLAN` (400). Auth code: `EMAIL_NOT_VERIFIED` (403).
+
+**Page** — `{items[], total, page, perPage}` (defaults 1/20, max 100).
+
+## Organizations
+
+**Org** — `*id, *name, *slug, logoUrl?, role? (my role), *createdAt`
+
+**Member** — `*userId, *email, *name, *emailVerified, *role, *joinedAt`.
+Roles: `OWNER > ADMIN > MEMBER`.
+
+**Invite** — `{id, email, role, expiresAt, createdAt}`. TTL 7 days.
+
+**CustomRole** — `{id, name, permissions[{object, action}], holders}`.
+Grantable objects: `org, member, invite, event, ticket, attendee,
+checkin, kit, audit, role, apikey`.
+
+**ApiKey / ApiKeyCreated** — metadata `{id, name, prefix, scopes[],
+expiresAt?}`; created adds one-time `key` (`rk_live_…`, shown once).
+
+## Events & tickets
+
+**Event** — `*id, *title, *slug, description?, venue?, location?,
+startsAt?, endsAt?, capacity? (null = unlimited), coverUrl?,
+*status (DRAFT|PUBLISHED|CANCELLED), *createdAt, *updatedAt`
+
+**TicketType** — `*id, *eventId, *name, description?, *priceCents,
+*currency, *quantityTotal, quantitySold, remaining, forSale,
+unavailableReason?, maxPerOrder?, *status (DRAFT|ACTIVE|PAUSED), soldOut`
+
+**EventImage** — `{id, url, publicId, format?, bytes, width?, height?}`
+
+## Orders & attendees
+
+**Order** — `*id, *eventId, *ticketTypeId, *quantity, *priceCents,
+*currency, *status (PENDING|PENDING_PAYMENT|CONFIRMED|CANCELLED|EXPIRED),
+expiresAt?`. Free orders confirm immediately.
+
+**Attendee** — `*id, orderId?, unitIndex, *eventId, userId?, *email,
+name?, *status (REGISTERED|CHECKED_IN|CANCELLED), qrPayload? (emails
+only), checkedInAt?`. Rows never deleted.
+
+**ScanResult** — `{outcome (CHECKED_IN|ALREADY_CHECKED_IN|INVALID_CODE|
+CANCELLED|WRONG_EVENT|REVERTED), method (qr|manual), attendeeId?,
+checkedInAt?}`. Refusals are 200, never errors.
+
+## Kits
+
+**KitResponse** — `*id, *eventId, *name, description?,
+*quantityTotal, *pending, *collected, *voided, *remaining`
+
+**CollectionResponse** — `*id, *kitId, kitName?, *eventId, *attendeeId,
+*status (PENDING|COLLECTED|VOIDED), collectedAt?, collectedBy?`.
+`CollectRequest`: `*attendeeId, reserve?, idempotencyKey?`.
+
+## Subscriptions
+
+**Tier** — `{plan (FREE|PRO|SCALE), name, priceId?, monthlyCents?,
+currency?, limits{maxEvents, maxMembers, maxAttendeesPerEvent,
+maxKitsPerEvent (-1 unlimited, 0 disabled)}, features[]}`.
+Free: 3/5/200/0, no features. Pro: 25/25/2000/10, all features. Scale:
+200/200/20000/−1, all features.
+
+**Subscription** — `{plan, status (ACTIVE|PAST_DUE|CANCELED),
+currentPeriodEnd?, cancelAtPeriodEnd}`. Absent reads FREE/ACTIVE.

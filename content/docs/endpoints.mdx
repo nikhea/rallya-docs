@@ -1,0 +1,103 @@
+---
+title: Endpoints
+description: Every route grouped by domain, with auth and gate notes.
+---
+
+Base path `/api/v1` (health at `GET /health`, Swagger UI at
+`/swagger/index.html`). Auth: `Authorization: Bearer <accessToken>` or
+`X-API-Key` for server keys. Org routes take UUID **or** slug unless noted.
+
+## Auth (public unless noted)
+
+| Method & path | Notes |
+|---|---|
+| `POST /auth/register` | Creates account; verification email follows |
+| `POST /auth/verify-email` | Body `{token}` or `?token=` (link clicks) |
+| `POST /auth/verify-code` | `{email, code}` — 6-digit OTP, 5 attempts |
+| `POST /auth/resend-verification` | Re-sends link + OTP |
+| `POST /auth/login` → `TokenPair` | Blocked until verified (`403 EMAIL_NOT_VERIFIED`) |
+| `POST /auth/refresh` | Single-use rotation; reuse revokes the session |
+| `POST /auth/forgot-password` | Always 200 (no enumeration) |
+| `POST /auth/reset-password` | Revokes all sessions |
+| `POST /auth/logout` 🔒 | Revokes session + tokens |
+| `GET /auth/me` 🔒 | Profile + `organizations[]` |
+
+## Organizations
+
+| Method & path | Gate |
+|---|---|
+| `GET /orgs`, `POST /orgs` | member / any user |
+| `GET/PATCH/DELETE /orgs/:id` | member / ADMIN / OWNER |
+| `GET/POST /orgs/:id/members` | ADMIN+ |
+| `PATCH /orgs/:id/members/me` | member (own preferences) |
+| `PATCH/DELETE /orgs/:id/members/:userId` | ADMIN+ / OWNER |
+| `GET/POST /orgs/:id/invites`, `DELETE /orgs/:id/invites/:inviteId` | ADMIN+ |
+| `POST /orgs/invites/accept`, `POST /orgs/invites/decline` | member |
+| `GET/POST /orgs/:id/roles` | OWNER for writes (Pro/Scale) |
+| `PATCH/DELETE /orgs/:id/roles/:role` | OWNER |
+| `POST /orgs/:id/roles/:role/assign|unassign` | OWNER |
+| `GET/POST /orgs/:id/api-keys` | ADMIN+ (Pro/Scale; keys can't manage keys) |
+| `DELETE /orgs/:id/api-keys/:keyId` | ADMIN+ |
+
+Member adds over the plan quota fail `402`; outsiders get stealth 404s.
+
+## Events & tickets
+
+| Method & path | Notes |
+|---|---|
+| `GET /events`, `GET /events/:id` | Public (published only) |
+| `GET/POST /orgs/:id/events` | ADMIN+; create over quota → `402` |
+| `GET/PATCH/DELETE /orgs/:id/events/:eventId` | ADMIN+ |
+| `POST .../publish|unpublish|cancel` | ADMIN+ (`publish` action) |
+| `POST .../cover`, `POST .../images`, `GET .../images` | ADMIN+; 5 MB, jpeg/png/webp |
+| `GET /events/:id/tickets` | Public (UUID only) |
+| `GET/POST /orgs/:id/events/:eventId/tickets` | ADMIN+ |
+| `GET/PATCH/DELETE .../tickets/:ticketId` | ADMIN+ |
+| `POST .../tickets/:ticketId/activate|pause` | ADMIN+ |
+
+## Orders & payments
+
+| Method & path | Notes |
+|---|---|
+| `POST /events/:id/orders` | Buyer; idempotencyKey optional (auto) |
+| `GET /orders/mine`, `GET /orders/:id` | Owner (stealth 404 for others) |
+| `POST /orders/:id/cancel` | Owner; terminal states reject |
+| `POST /orders/:id/checkout` → `{url, sessionId}` | Priced only; 503 unconfigured |
+| `POST /webhooks/stripe` | Public, raw-body HMAC; fulfillment only here |
+
+## Attendees & check-in (ADMIN+ door routes)
+
+`GET /attendees/mine`, `GET /attendees/:id`, `POST
+/attendees/:id/cancel` (owner) · `GET/POST
+/orgs/:id/events/:eventId/attendees`, `PATCH .../attendees/:attendeeId`
+(roster) · `POST .../checkin` (`{code}|{attendeeId}` → 200 + outcome),
+`POST .../checkin/batch` (≤ 50), `POST .../checkin/revert` (422 unless
+checked-in; 422 with unvoided kits), `GET .../checkin/stats`.
+
+## Kits (ADMIN+, Pro/Scale)
+
+`GET/POST .../events/:eventId/kits` (tallies included) ·
+`PATCH/DELETE .../kits/:kitId` · `POST .../kits/:kitId/collect`
+(`{attendeeId, reserve?, idempotencyKey?}` → 201; 422 unless checked-in;
+409 exhausted/duplicate) · `GET .../kits/:kitId/collections` ·
+`GET .../kit-collections` (`?kitId&status&attendeeId`) · `POST
+.../kit-collections/:id/collect|void`.
+
+## Subscriptions
+
+`GET /subscription/plans` (public catalog) ·
+`GET /orgs/:id/subscription` (members; absent reads FREE) ·
+`POST /orgs/:id/subscription/checkout {plan}` (OWNER → Stripe URL; 503
+unconfigured) · `POST /orgs/:id/subscription/portal` (OWNER).
+
+## Admin (superadmin) & audit
+
+`GET /admin/orgs`, `GET /admin/orgs/:id`, `POST
+/admin/orgs/:id/policies/reseed`, `GET /admin/users`, `GET
+/admin/users/:id`, `GET /admin/users/:id/orders`, `POST
+/admin/users/:id/policies/sync` · `GET /orgs/:id/audit` (ADMIN+) ·
+`GET /admin/audit` (superadmin).
+
+🔒 = bearer auth required. 401 expired/revoked · 403 wrong scope ·
+404 missing-or-no-access · 409 conflict · 413 batch over cap ·
+422 bad transition · 429 rate-limited (+`Retry-After`).

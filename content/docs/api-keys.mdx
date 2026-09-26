@@ -1,0 +1,72 @@
+---
+title: API Keys Setup
+description: Mint, use, scope, rotate, and revoke server-to-server keys.
+---
+
+API keys authenticate backend jobs, cron, door tablets, and CI — anything
+that can't do login + refresh. Pro/Scale feature. Keys are
+per-organization, long-lived, revocable, and sent as `X-API-Key` (no
+refresh cycle, no token store).
+
+## 1. Mint a key (user auth, ADMIN+)
+
+```bash
+curl -X POST localhost:8080/api/v1/orgs/acme/api-keys \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"door-tablet-1","scopes":["checkin:create"],"expiresAt":"2027-01-01T00:00:00Z"}'
+# → { apiKey: {...metadata}, key: "rk_live_..." }  — raw secret shows ONCE
+```
+
+TypeScript:
+
+```ts
+const created = await client.request("orgs/acme/api-keys", {
+  method: "POST",
+  body: { name: "door-tablet-1", scopes: ["checkin:create"] },
+});
+process.env.RALLYA_API_KEY = created.key; // save to vault, never git
+```
+
+## 2. Use it
+
+```bash
+curl localhost:8080/api/v1/orgs/acme/events/fest-2026/checkin/stats \
+  -H "X-API-Key: $RALLYA_API_KEY"
+```
+
+```ts
+const client = new RallyaClient({ baseUrl, apiKey: process.env.RALLYA_API_KEY! });
+await client.checkin.scan("acme", "fest-2026", { code });
+```
+
+```go
+client, _ := rallya.NewClient(rallya.Options{ BaseURL: u, APIKey: os.Getenv("RALLYA_API_KEY") })
+```
+
+A static string or an async provider/vault read both work. Never pass
+`apiKey` together with a token store — construction throws.
+
+## 3. Scopes
+
+`object:action` grants snapshotted at creation, intersected with the
+creator's live role; empty scopes inherit it. Unknown pairs are rejected
+with 400. Useful sets:
+
+| Use case | Scopes |
+|---|---|
+| Door tablet | `checkin:create`, `checkin:read`, `attendee:read` |
+| Display board | `event:read`, `ticket:read`, `checkin:read` |
+| CI / jobs | narrowest set for the job, short `expiresAt` |
+
+## 4. Rules & rotation
+
+- **Org-bound**: key for org A calling org B gets 403.
+- **No self-management**: keys can't create/list/revoke keys (403) and
+  can't touch `/admin/*` — mint and revoke with a user JWT.
+- **Fail-closed**: revoked/expired keys, removed creators, and suspended
+  users all yield 401. Client `onAuthFailure` fires — page whoever owns
+  the tablet.
+- **Rotation**: create new → dual-active grace → revoke old
+  (`DELETE /orgs/:id/api-keys/:keyId`). List keys anytime with
+  `GET /orgs/:id/api-keys` (metadata only — hashes/raw never leave).

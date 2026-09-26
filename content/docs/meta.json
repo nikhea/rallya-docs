@@ -1,4 +1,4 @@
 {
   "title": "Rallya Docs",
-  "pages": ["index", "quickstart", "architecture", "---Products---", "auth", "organizations", "events", "orders-payments", "attendees-checkin", "kits", "subscriptions", "---Builders---", "sdks", "api-conventions", "operations"]
+  "pages": ["index", "quickstart", "architecture", "---Products---", "auth", "organizations", "events", "orders-payments", "attendees-checkin", "kits", "subscriptions", "---Builders---", "sdks", "api-conventions", "operations", "---Reference---", "endpoints", "schemas", "api-keys", "self-hosting"]
 }

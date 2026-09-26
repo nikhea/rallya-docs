@@ -1,0 +1,71 @@
+---
+title: Self-Hosting
+description: Compose stack, environments, TLS, backups, and paid integrations.
+---
+
+## Stack
+
+```bash
+cp .env.example .env   # fill secrets; .env is gitignored, never committed
+docker compose up --build
+curl localhost:8080/health
+```
+
+Services: `db` (Postgres 17, host port 5433 by default — set `DB_PORT`),
+`redis` (7, internal only), `migrate` (one-shot `/out/migrate up`), `api`
+(`:8080`, `./uploads` mounted). Boot order is the release order:
+`db + redis → migrate → api`. The API never migrates on boot.
+
+`docker compose down -v` wipes everything (pgdata + redisdata).
+
+## Environment
+
+| Var | Required | Notes |
+|---|---|---|
+| `DATABASE_URL` | yes | Compose uses the `db` hostname; host runs use `localhost:5433` |
+| `JWT_SECRET`, `QR_SIGNING_SECRET` | yes | 32+ random bytes (`openssl rand -hex 32`), fail-closed |
+| `APP_PORT`, `APP_URL` | — | Listen port / public URL (covers, Stripe redirects) |
+| `CORS_ALLOWED_ORIGINS` | — | Unset = deny cross-origin (fail closed) |
+| `SUPERADMIN_EMAILS` | — | Comma-separated bootstrap admins |
+| `RATE_LIMIT_AUTH_PER_MIN` / `RATE_LIMIT_DEFAULT_PER_MIN` | — | Defaults 10 / 600 |
+| `REDIS_URL` | — | Unset = memory limiter, cache disabled |
+| `EMAIL_*` (SMTP) | — | Unset = log-only; flows still succeed |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOKS_SIGNING_SECRET` | — | Unset = checkout/subscription 503s |
+| `STRIPE_PRICE_PRO`, `STRIPE_PRICE_SCALE` | — | Recurring prices; empty tier unpurchasable |
+| `CLOUDINARY_URL` (or `CLOUD_*`) | — | Unset = local disk `./uploads` |
+
+## Reverse proxy & TLS
+
+Terminate TLS in front (Caddy example):
+
+```
+rallya.example.com {
+  reverse_proxy localhost:8080
+}
+```
+
+Set `TRUSTED_PROXIES` to the proxy so rate limiting keys on real client
+IPs. Forward Stripe webhooks to `/api/v1/webhooks/stripe` with the raw
+body intact (no JSON re-serialization — signature verification needs the
+exact bytes).
+
+## Backups & upgrades
+
+- **Database**: `pg_dump` on a schedule; test restores, not just dumps.
+- **Uploads**: back up the `./uploads` volume alongside the DB (covers are
+  referenced by URL from event rows).
+- **Upgrades**: pull image/code → `docker compose up --build` (migrate runs
+  first by dependency). Migrations are forward-only; never edit applied
+  files. For a dirty DB: fix manually, then `make migrate-force VERSION=x`.
+- **Health**: `GET /health` for load-balancer checks; watch River queue
+  depth (`river_job`) and 429 rates.
+
+## Paid integrations checklist
+
+1. **Stripe**: restricted `sk_` key → `STRIPE_SECRET_KEY`; create recurring
+   Pro/Scale prices → `STRIPE_PRICE_*`; webhook endpoint → signing secret;
+   verify with a test-mode subscription before going live.
+2. **Cloudinary**: `CLOUDINARY_URL` (or name/key/secret) to move covers off
+   local disk; existing local URLs keep serving.
+3. **SMTP**: Gmail or any provider; without it, verification links live in
+   `river_job.args` — fine for dev, not for production.
