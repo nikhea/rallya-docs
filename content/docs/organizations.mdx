@@ -1,0 +1,34 @@
+---
+title: Organizations
+description: Tenants, memberships, invites, custom roles, and API keys.
+---
+
+## Tenants
+
+Orgs own events, members, and policies. IDs accept UUID or slug
+(auto-uniquified: `acme`, `acme-2`, …). Outsiders get stealth 404s —
+existence is never confirmed to non-members.
+
+## Memberships
+
+Fixed roles `OWNER > ADMIN > MEMBER`. The last OWNER can never be demoted
+or removed. Membership changes sync Casbin groupings; `SyncUserPolicies`
+repairs drift.
+
+## Invites
+
+7-day TTL email invites, token hashes only, supersede-on-reinvite. Accept
+requires an account-email match (idempotent re-accept); decline rejects
+(idempotent; accepted invites 409). Accepting counts toward the plan's
+member quota.
+
+## Custom roles
+
+Grant-only permission sets unioned with the fixed role (Pro/Scale):
+slug names, fixed names reserved, 20/org cap, delete blocked while
+assigned. Lifecycle is OWNER-only.
+
+## API keys
+
+Per-org server keys (Pro/Scale) with `object:action` scopes snapshotted at
+creation. Rotation = create new → dual-active grace → revoke old.

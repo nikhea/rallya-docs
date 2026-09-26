@@ -1,0 +1,29 @@
+---
+title: Kits
+description: Named merch types with per-attendee collection records.
+---
+
+## Catalog
+
+Organizers define named kit types per event (`VIP pack`, `T-shirt M`) with
+a total quantity (Pro/Scale feature). The list carries live
+pending/collected/voided/remaining tallies.
+
+## Handouts
+
+`PENDING → COLLECTED (→ VOIDED)` records, one active collection per
+attendee per kit; voided rows free re-issue.
+
+- **Collect**: immediate by default; `reserve: true` holds `PENDING` for
+  later pickup. `idempotencyKey` makes tablet retries converge.
+- **Pickup**: `PENDING → COLLECTED` with staff stamps.
+- **Void**: from either state; anything else is `422`.
+
+## Guards
+
+- Attendee must be `CHECKED_IN` (`422` otherwise).
+- Kit row locked in-tx; reservations and collections both hold stock;
+  exhaustion is `409`, duplicates `409`.
+- Quantity can't drop below the collected count; delete needs zero active
+  rows (`422` — void first).
+- Wrong-event refs stealth-404; every mutation is audited.

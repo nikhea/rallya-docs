@@ -1,0 +1,32 @@
+---
+title: Subscriptions
+description: Org tiers over Stripe Billing — quotas, flags, and lifecycle.
+---
+
+## Tiers
+
+| | Free $0 | Pro | Scale |
+|---|---|---|---|
+| Active events/org | 3 | 25 | 200 |
+| Members/org | 5 | 25 | 200 |
+| Attendees/event | 200 | 2,000 | 20,000 |
+| Custom roles / API keys / kits | off | on | on (kits unlimited) |
+
+Forever-free quotas, no trial mechanics. Amounts resolve live from the
+configured Stripe Prices; unconfigured billing reads fine but money
+movement 503s.
+
+## Buying & managing (OWNER)
+
+- Upgrade: subscription-mode Checkout → fulfillment via webhook (nothing is
+  written at checkout start).
+- Manage/cancel: Customer Portal. Downgrades land at period end.
+- Failed renewals: 7-day past-due grace keeps the tier (repeat failures
+  never extend it), then auto-drop to Free. Usage is always grandfathered.
+
+## Enforcement
+
+Organizer writes over quota or gated features fail `402
+UPGRADE_REQUIRED`: event create, member add/invite accept, role define,
+API-key mint, kit define. Buyer cap violations read as `409` fullness.
+Absent subscriptions resolve Free (fail-closed, never open).

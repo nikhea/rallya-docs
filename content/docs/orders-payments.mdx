@@ -1,0 +1,30 @@
+---
+title: Orders & Payments
+description: One-off attendee checkout. Never subscription-based.
+---
+
+## Orders
+
+One ticket type per order, quantity > 0, per-order caps honored. Free
+(0-cent) orders confirm immediately; priced orders land in
+`PENDING_PAYMENT` with a hold (swept every 5 min). Replays with the same
+idempotency key return the original order — retries never double-claim.
+
+## Stripe Checkout
+
+`POST /orders/:id/checkout` returns the hosted redirect URL. Fulfillment
+runs **only** in the webhook (`checkout.session.completed` with paid
+status); the success page never fulfills. Unconfigured Stripe degrades to
+503; boot never fails for missing keys.
+
+## Webhooks
+
+`POST /webhooks/stripe` (public, raw-body HMAC first): fulfill paid
+sessions idempotently (`MarkPaid`), ack-and-log async failures and unknown
+types, 400 on bad signatures.
+
+## Plan boundary
+
+Attendee payment is intentionally one-off: no customers, no saved cards, no
+recurring charges. When the organizer's tier attendee cap is hit, buyers
+see `409` fullness — billing state is never exposed to buyers.

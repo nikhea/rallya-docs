@@ -1,0 +1,32 @@
+---
+title: Events & Ticketing
+description: Lifecycle, discovery, covers, ticket types, and capacity.
+---
+
+## Lifecycle
+
+`DRAFT → PUBLISHED` (→ `DRAFT` via unpublish, or terminal `CANCELLED`).
+Status never changes via the update endpoint. Only published events appear
+in public discovery; drafts/cancelled stealth-404 outsiders.
+
+## Discovery & slugs
+
+Public `GET /events` (published only) with `q/from/to/status/sort` filters;
+org listing adds drafts for members. Slugs are per-org and auto-uniquified.
+
+## Covers & images
+
+5 MB cap, MIME sniffed from bytes (jpeg/png/webp only). Cloudinary when
+configured, else local disk under `./uploads`.
+
+## Ticket types
+
+Name, price, quantity, per-order caps, sale windows. Status
+`DRAFT/ACTIVE/PAUSED`; only active types sell. `sum(quantity_total)` can
+never exceed event capacity (409 both directions).
+
+## Quotas
+
+Active (non-cancelled) events per org are plan-limited (Free: 3) — over
+quota, creation fails `402 UPGRADE_REQUIRED`. Existing events are
+grandfathered.

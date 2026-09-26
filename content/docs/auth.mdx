@@ -1,0 +1,32 @@
+---
+title: Auth
+description: Identity, sessions, API keys, and verification flows.
+---
+
+## User sessions
+
+Short-lived access JWT (15 min) + rotating refresh token (30 d), bound to
+revocable server-side sessions. Login is blocked until the email is
+verified (`403 EMAIL_NOT_VERIFIED`).
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `POST /auth/register` | no | Sends verification (24 h link + 6-digit OTP, 10 min, 5 attempts) |
+| `POST /auth/login` → tokens | no | Store the pair client-side |
+| `POST /auth/refresh` | no | Single-use rotation; reuse revokes the session |
+| `POST /auth/verify-email` / `verify-code` | no | Link or OTP confirmation |
+| `POST /auth/forgot-password` | no | Always 200 (no enumeration) |
+| `POST /auth/reset-password` | no | Revokes all sessions |
+| `POST /auth/logout` | yes | Revokes session + tokens |
+| `GET /auth/me` | yes | Profile + `organizations[]` |
+
+SDKs auto-refresh once on 401 (single-flight) and sign out when refresh is
+rejected.
+
+## API keys (server-to-server)
+
+Per-organization, long-lived, revocable keys sent as `X-API-Key` — for
+cron jobs, door tablets, CI. Mint with user auth (ADMIN+); the raw secret
+shows once. Keys are org-bound (cross-org calls 403), scope-checked, and
+can never manage keys or touch `/admin/*`. Revoked/expired keys fail
+closed with 401.

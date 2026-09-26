@@ -1,0 +1,29 @@
+---
+title: Attendees & Check-in
+description: Door records, QR scans, refusals-as-data, and kit eligibility.
+---
+
+## Attendees
+
+One row per ticket unit, minted at order confirmation (idempotent on
+redelivery). Manual walk-ins supported. Rows are never deleted; owner
+cancels and order-cancel cascades flip `CANCELLED`. QR payloads
+(`uuid.token.hmac`) authenticate future scans; hashes only at rest.
+
+## Check-in
+
+Door scans over QR or roster ID. **Refusals are data, never errors** —
+every attempt logs and returns 200 with an outcome:
+
+`CHECKED_IN`, `ALREADY_CHECKED_IN`, `INVALID_CODE`, `CANCELLED`,
+`WRONG_EVENT`, `REVERTED`.
+
+Token mismatches collapse into `INVALID_CODE` (no oracle for probers); a
+genuine ticket at the wrong event reports `WRONG_EVENT`. Rescans never move
+timestamps; batch caps at 50 (413 over). Reverts undo mis-scans but are
+blocked (`422`) while the attendee holds unvoided kit collections.
+
+## Kit eligibility
+
+Check-in is the gate for kit handouts: only `CHECKED_IN` attendees can
+collect. No auto-creation — staff hand out explicitly (see Kits).
