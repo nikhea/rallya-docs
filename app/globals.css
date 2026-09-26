@@ -3,6 +3,15 @@
 @import "fumadocs-ui/css/preset.css";
 @source "../node_modules/fumadocs-ui/dist";
 
+/* Sidebar spans half the layout on desktop (equivalent to w-[50%] on the
+   aside: the stock rule's ID+class specificity wins over a plain override,
+   hence !important). Mobile drawer untouched. */
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 50% !important;
+  }
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
