@@ -6,6 +6,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <DocsLayout
       tree={source.pageTree}
+      githubUrl="https://github.com/nikhea/rallya"
       nav={{
         title: "Rallya Docs",
       }}
