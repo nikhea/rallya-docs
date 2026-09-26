@@ -1,13 +1,5 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
-
-/* Docs sidebar spans 60% of the layout on large screens (overrides the
-   stock 268px --fd-sidebar-width; mobile drawer behavior untouched). */
-@media (min-width: 768px) {
-  #nd-docs-layout {
-    --fd-sidebar-width: 60%;
-  }
-}
 @import "fumadocs-ui/css/preset.css";
 @source "../node_modules/fumadocs-ui/dist";
 
