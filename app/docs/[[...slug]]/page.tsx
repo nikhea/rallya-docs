@@ -1,4 +1,4 @@
-import { source } from "@/lib/source";
+import { getSource } from "@/lib/source";
 import { getPageMarkdownUrl } from "@/lib/shared";
 import { PageActions } from "@/components/page-actions";
 import {
@@ -14,6 +14,7 @@ export default async function Page(props: {
   params: Promise<{ slug?: string[] }>;
 }) {
   const params = await props.params;
+  const { source } = await getSource();
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
@@ -35,6 +36,7 @@ export default async function Page(props: {
 }
 
 export async function generateStaticParams() {
+  const { source } = await getSource();
   return source.generateParams();
 }
 
@@ -42,6 +44,7 @@ export async function generateMetadata(props: {
   params: Promise<{ slug?: string[] }>;
 }) {
   const params = await props.params;
+  const { source } = await getSource();
   const page = source.getPage(params.slug);
   if (!page) notFound();
 
