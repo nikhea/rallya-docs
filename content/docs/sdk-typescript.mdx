@@ -1,0 +1,306 @@
+---
+title: TypeScript SDK Reference
+description: Complete @rallya/sdk reference — every resource, method, type, and helper.
+icon: FileCode2
+---
+
+`@rallya/sdk` — zero runtime dependencies, fetch-based (works in Node 18+,
+browsers, edge runtimes), full types generated from the live Swagger spec.
+[npm](https://www.npmjs.com/package/@rallya/sdk) ·
+[GitHub](https://github.com/nikhea/rallya-js-sdk)
+
+```bash
+npm i @rallya/sdk
+```
+
+```ts
+import { RallyaClient } from "@rallya/sdk";
+```
+
+Use `@rallya/sdk/node` only for the Stripe webhook verifier — browser builds
+must import `@rallya/sdk`.
+
+## Client construction
+
+Exactly one auth mode — both together (or neither) throws at construction:
+
+```ts
+// 1. User sessions (browser/mobile): short-lived JWT + refresh rotation
+let tokens: TokenPair | null = null;
+const client = new RallyaClient({
+  baseUrl: "http://localhost:8080/api/v1",
+  getTokens: () => tokens,
+  setTokens: (t) => { tokens = t; },
+  onAuthFailure: () => { /* refresh rejected — signed out */ },
+});
+
+// 2. Server-to-server org keys (rk_live_*): no refresh cycle
+const server = new RallyaClient({
+  baseUrl: "http://localhost:8080/api/v1",
+  apiKey: process.env.RALLYA_API_KEY,        // static string …
+  // apiKey: () => vault.read("rallya/key"), // … or async provider
+});
+```
+
+| Option | Notes |
+|---|---|
+| `baseUrl` | Required. `http://localhost:8080/api/v1` in dev. Trailing slashes are stripped. |
+| `getTokens` / `setTokens` | Required together for session mode. May be async. |
+| `apiKey` | Static string or `() => string \| null \| Promise<string \| null>`. |
+| `onAuthFailure` | Fires on dead session/key (refresh rejected, 401 after retry). Client clears stored tokens first. |
+| `fetchImpl` | Custom fetch for edge runtimes, tests, instrumentation. Defaults to global `fetch`. |
+
+UUID-or-slug segments are escaped for you (`RallyaClient.seg`).
+
+## Behavior notes (both modes)
+
+- **401 → refresh → retry** (session mode, single-flight): concurrent 401s
+  trigger one refresh; the retried request uses the rotated pair. Refresh
+  rejected (401/404) → `setTokens(null)` + `onAuthFailure()`.
+- **API-key mode**: `X-API-Key` header, no refresh, no token store. A 401
+  fires `onAuthFailure` directly.
+- **Idempotency**: `orders.create` auto-generates an `idempotencyKey` when
+  omitted; pass your own to make retries converge across processes.
+- **Uploads**: covers/images enforce a 5 MB cap client-side (throws before
+  the request). `Buffer` inputs are sent as `application/octet-stream`.
+- **Pagination**: list routes take `{ page?, perPage? }` (server defaults
+  1/20, max 100). The server sometimes omits `page`/`perPage` on the wire;
+  the SDK backfills them from your request (`withPage`), so `Page<T>` always
+  has `items`, `total`, `page`, `perPage`.
+- **Batch check-in**: `checkin.scanBatch` rejects more than 50 codes locally
+  (server also caps at 50 → 413).
+- **`health.live()`** resolves against the **origin** of `baseUrl` (it sits
+  outside `/api/v1`), no auth.
+- **Public routes** (`listPublic`, `getPublic`, `listPlans`, verify/reset
+  flows) send no auth header.
+
+## Resources
+
+All methods return promises; every API failure throws `RallyaError`.
+
+### `client.auth`
+
+| Method | Notes |
+|---|---|
+| `register({ email, password, firstName?, lastName? })` | → `TokenPair` |
+| `login({ email, password })` | → `TokenPair`; 403 `EMAIL_NOT_VERIFIED` until verified |
+| `refresh(refreshToken)` | Manual rotation (auto-refresh already happens on 401) |
+| `verifyEmail(token)` | POST body `{token}` |
+| `verifyEmailLink(token)` | GET with `?token=` (link clicks) |
+| `verifyCode(email, code)` | 6-digit OTP |
+| `resendVerification(email)` | Re-sends link + OTP |
+| `forgotPassword(email)` | Always 200 (no enumeration) |
+| `resetPassword(token, newPassword)` | Revokes all sessions |
+| `logout()` | Revokes session + tokens |
+| `me()` | → `Me` (profile + `organizations[]`) |
+
+```ts
+let tokens = await client.auth.login({ email, password });
+const me = await client.auth.me();
+```
+
+### `client.orgs`
+
+| Method | Notes |
+|---|---|
+| `create({ name, slug?, logo? })` | → `Org` |
+| `listMine()` | → `Org[]` |
+| `get(idOrSlug)` / `update(idOrSlug, { name?, slug?, logo? })` / `remove(idOrSlug)` | Stealth 404 for outsiders |
+| `listMembers(idOrSlug, q?)` | → `Page<OrgMember>` |
+| `addMember(idOrSlug, { email, role? })` | role: `OWNER`/`ADMIN`/`MEMBER` |
+| `updateMemberRole(idOrSlug, userId, role)` | Last OWNER can't be demoted |
+| `removeMember(idOrSlug, userId)` | OWNER |
+| `updateMyPreferences(idOrSlug, { notifyEvents? })` | Own notification prefs |
+| `invite(idOrSlug, { email, role? })` | 7-day TTL; → `OrgInvite` |
+| `listInvites(idOrSlug, q?)` | → `Page<OrgInvite>` |
+| `revokeInvite(idOrSlug, inviteId)` | |
+| `acceptInvite(token)` / `declineInvite(token)` | Idempotent |
+| `listRoles(idOrSlug)` | → `CustomRole[]` (Pro/Scale) |
+| `defineRole(idOrSlug, { name, permissions })` | Grant-only; 20/org cap |
+| `updateRole(idOrSlug, role, permissions)` | |
+| `deleteRole(idOrSlug, role)` | Blocked while assigned |
+| `assignRole(idOrSlug, role, userId)` / `unassignRole(...)` | OWNER |
+
+### `client.events`
+
+| Method | Notes |
+|---|---|
+| `listPublic(filter?)` | Published only. `EventFilter`: `status`, `from`, `to`, `q`, `sort: "starts" \| "created"`, + paging |
+| `getPublic(idOrSlug)` | Published only |
+| `listOrg(orgIdOrSlug, q?)` | Members see drafts too |
+| `create(orgIdOrSlug, input)` | `CreateEventInput`: `title*`, `slug?`, `description?`, `venue?`, `location?`, `startsAt?`, `endsAt?`, `capacity?`. Over quota → 402 |
+| `get` / `update` / `remove` | `UpdateEventInput` = partial + `clearCover?` |
+| `publish` / `unpublish` / `cancel` | `DRAFT → PUBLISHED`; cancel is terminal |
+| `uploadCover(orgIdOrSlug, eventIdOrSlug, file, filename?)` | ≤ 5 MB, jpeg/png/webp |
+| `uploadImages(orgIdOrSlug, eventIdOrSlug, file, filename?)` | → `EventImage` |
+| `listImages(orgIdOrSlug, eventIdOrSlug)` | → `Page<EventImage>` |
+
+### `client.tickets`
+
+| Method | Notes |
+|---|---|
+| `listPublic(eventIdOrSlug)` | Public; UUID only |
+| `list(orgIdOrSlug, eventIdOrSlug)` | → `Page<TicketType>` |
+| `create(orgIdOrSlug, eventIdOrSlug, input)` | `priceCents*` … `quantityTotal*` |
+| `get` / `update` / `remove` | |
+| `activate` / `pause` | Only `ACTIVE` sells |
+
+### `client.orders`
+
+| Method | Notes |
+|---|---|
+| `create(eventIdOrSlug, { ticketTypeId, quantity, idempotencyKey? })` | Auto idempotency key; free orders confirm immediately |
+| `listMine(q?)` | → `Page<Order>` |
+| `get(orderId)` | Others' orders → stealth 404 |
+| `cancel(orderId)` | Terminal states reject |
+
+### `client.payments`
+
+| Method | Notes |
+|---|---|
+| `checkout(orderId)` | → `{ url, sessionId }` Stripe Checkout redirect. 503 when unconfigured |
+
+### `client.attendees`
+
+| Method | Notes |
+|---|---|
+| `listMine(q?)` | → `Page<Attendee>` |
+| `getMine(attendeeId)` | |
+| `cancelMine(attendeeId)` | |
+| `listRoster(orgIdOrSlug, eventIdOrSlug, q?)` | ADMIN+ door roster |
+| `addWalkIn(orgIdOrSlug, eventIdOrSlug, { email, name? })` | |
+| `correct(orgIdOrSlug, eventIdOrSlug, attendeeId, { name?, email? })` | Fix typos |
+
+### `client.checkin`
+
+Door scan refusals are **200 + outcome**, never errors (every attempt logs).
+
+| Method | Notes |
+|---|---|
+| `scan(orgIdOrSlug, eventIdOrSlug, { code? } \| { attendeeId? })` | Exactly one of `code` / `attendeeId` |
+| `scanBatch(orgIdOrSlug, eventIdOrSlug, codes)` | ≤ 50 codes |
+| `revert(orgIdOrSlug, eventIdOrSlug, attendeeId)` | 422 unless checked-in; 422 with unvoided kits |
+| `stats(orgIdOrSlug, eventIdOrSlug)` | → `CheckinStats` |
+
+```ts
+const res = await client.checkin.scan("acme", "fest-2026", { code });
+if (res.outcome !== "CHECKED_IN") showDoorMessage(res.outcome);
+```
+
+### `client.kits`
+
+| Method | Notes |
+|---|---|
+| `create(orgIdOrSlug, eventIdOrSlug, { name, description?, quantityTotal })` | Pro/Scale; 201 |
+| `list(orgIdOrSlug, eventIdOrSlug)` | → `KitType[]` with live tallies |
+| `update(…, kitId, { name?, description?, quantityTotal? })` | Quantity can't drop below collected |
+| `remove(…, kitId)` | 422 with active rows — void first |
+| `collect(…, kitId, { attendeeId, reserve?, idempotencyKey? })` | Immediate collect; `reserve: true` holds PENDING; 422 unless checked-in; 409 exhausted/duplicate |
+| `markCollected(…, collectionId)` | PENDING → COLLECTED |
+| `void(…, collectionId)` | Either state; frees re-issue |
+| `listCollections(…, { kitId?, status?, attendeeId? }?)` | → `{ items, total, page?, perPage? }` |
+| `listKitCollections(…, kitId, { status? }?)` | Per-kit handouts |
+
+### `client.subscriptions`
+
+| Method | Notes |
+|---|---|
+| `listPlans()` | Public catalog: tiers, limits, features, prices |
+| `get(orgIdOrSlug)` | Org billing; absent subscription reads FREE |
+| `checkout(orgIdOrSlug, plan)` | `"PRO"` or `"SCALE"`; OWNER; → `{ url, sessionId }`; 503 unconfigured |
+| `portal(orgIdOrSlug)` | OWNER self-serve manage/cancel; → `{ url }` |
+
+### `client.audit` (ADMIN+ / superadmin)
+
+| Method | Notes |
+|---|---|
+| `listOrg(orgIdOrSlug, q?)` | `AuditQuery`: `action`, `objectType`, `objectId`, `actor`, `org`, `since`, `until`, + paging |
+| `listPlatform(q?)` | Superadmin cross-tenant |
+
+### `client.admin` (superadmin)
+
+| Method | Notes |
+|---|---|
+| `listOrgs(q?)` | → `Page<{ id, name, slug, members, createdAt }>` |
+| `getOrg(id)` | |
+| `reseedOrgPolicies(id)` | → `PolicyDiff` |
+| `searchUsers(q?)` | `q` filter + paging |
+| `getUser(id)` | |
+| `listUserOrders(id, q?)` | |
+| `syncUserPolicies(id)` | → `PolicyDiff` |
+
+### `client.health`
+
+| Method | Notes |
+|---|---|
+| `live()` | `GET <origin>/health` — outside `/api/v1`, no auth |
+| `hello()` | Public hello route |
+
+## Errors
+
+Every API failure throws `RallyaError`:
+
+| Field / getter | Meaning |
+|---|---|
+| `status` | HTTP status |
+| `code?` | Machine code (`EMAIL_NOT_VERIFIED`, `UPGRADE_REQUIRED`, …) |
+| `message` | Server `{error}` text |
+| `details?` | Full parsed body when present |
+| `retryAfterMs?` | Parsed `Retry-After` (429 only) |
+| `isUnauthorized` / `isForbidden` / `isNotFound` / `isRateLimited` | Convenience getters |
+
+Stealth 404s mean "not found **or** no access" — use the helper:
+
+```ts
+import { RallyaError, isNotFoundOrForbidden } from "@rallya/sdk";
+
+try {
+  await client.orgs.get("acme");
+} catch (e) {
+  if (isNotFoundOrForbidden(e)) { /* missing or no access */ }
+  if (e instanceof RallyaError && e.isRateLimited) await sleep(e.retryAfterMs ?? 1000);
+}
+```
+
+## Core types
+
+`TokenPair` `{accessToken, refreshToken}` · `Page<T>` `{items, total, page, perPage}` ·
+`PageQuery` `{page?, perPage?}` · `MemberRole` `OWNER|ADMIN|MEMBER` ·
+`EventStatus` `DRAFT|PUBLISHED|CANCELLED` · `TicketStatus` `DRAFT|ACTIVE|PAUSED` ·
+`OrderStatus` `PENDING|PENDING_PAYMENT|CONFIRMED|CANCELLED|EXPIRED` ·
+`AttendeeStatus` `REGISTERED|CHECKED_IN|CANCELLED` ·
+`CheckinOutcome` `CHECKED_IN|ALREADY_CHECKED_IN|INVALID_CODE|CANCELLED|WRONG_EVENT|REVERTED` ·
+`CollectionStatus` `PENDING|COLLECTED|VOIDED` ·
+`SubscriptionPlan` `FREE|PRO|SCALE` · `SubscriptionStatus` `ACTIVE|PAST_DUE|CANCELED` ·
+`PlanLimits` `{maxEvents, maxMembers, maxAttendeesPerEvent, maxKitsPerEvent}` ·
+`PolicyDiff` `{added, removed, total}` — see [Schemas](/docs/schemas) for the
+full wire shapes and [Swagger](/docs/swagger) for machine truth.
+
+## Stripe webhooks (`@rallya/sdk/node`)
+
+Node-only. Verify over the **raw** body — frameworks must not JSON-parse first:
+
+```ts
+import { verifyStripeWebhookSignature } from "@rallya/sdk/node";
+
+const { verified, eventId } = verifyStripeWebhookSignature({
+  rawBody,               // string | Buffer, untouched
+  signatureHeader: req.headers["stripe-signature"],
+  webhookSecret: process.env.STRIPE_WEBHOOKS_SIGNING_SECRET!,
+  toleranceSecs: 300,    // optional, default 300
+});
+if (!verified) return res.status(400).end();
+```
+
+## Development
+
+```bash
+npm run gen        # ../rallya/docs/swagger.json → openapi3.json → src/generated/schema.ts
+npm run gen:check  # fail if the committed schema drifted from swagger.json
+npm test           # vitest
+npm run build      # tsup → dist/
+```
+
+`src/generated/schema.ts` (~7,800 lines) is generated, never hand-edited.
+The hand-friendly `src/types.ts` mirrors it 1:1; wire truth is the generated
+schema. See [Swagger & OpenAPI](/docs/swagger) for the pipeline.

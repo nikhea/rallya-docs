@@ -1,0 +1,281 @@
+---
+title: Go SDK Reference
+description: Complete rallya-go-sdk reference — every service, method, type, and helper.
+icon: FileCode
+---
+
+`github.com/nikhea/rallya-go-sdk` — stdlib only, a port of `@rallya/sdk`.
+[GitHub](https://github.com/nikhea/rallya-go-sdk)
+
+```bash
+go get github.com/nikhea/rallya-go-sdk
+```
+
+```go
+import rallya "github.com/nikhea/rallya-go-sdk"
+import "github.com/nikhea/rallya-go-sdk/webhooks"
+
+ctx := context.Background()
+```
+
+## Client construction
+
+Exactly one auth mode — both together, or neither, is a construction error:
+
+```go
+// 1. User sessions (short-lived JWT + refresh rotation)
+store := rallya.NewMemoryTokenStore(nil) // or your own storage
+client, err := rallya.NewClient(rallya.Options{
+    BaseURL:   "http://localhost:8080/api/v1",
+    GetTokens: store.GetTokens,   // func() *rallya.TokenPair
+    SetTokens: store.SetTokens,   // func(*rallya.TokenPair)
+    OnAuthFailure: func() { /* refresh rejected — signed out */ },
+})
+
+// 2. Server-to-server org keys (rk_live_*): no refresh cycle
+client, err = rallya.NewClient(rallya.Options{
+    BaseURL: "http://localhost:8080/api/v1",
+    APIKey:  os.Getenv("RALLYA_API_KEY"),          // static …
+    // APIKeyFunc: func() string { return vault.Read("rallya/key") }, // … or provider
+})
+```
+
+| Option | Notes |
+|---|---|
+| `BaseURL` | Required. Trailing slashes are tolerated. |
+| `GetTokens` / `SetTokens` | Required together for session mode. |
+| `APIKey` / `APIKeyFunc` | Static org key or provider func. |
+| `OnAuthFailure` | Fires on dead session/key; the client clears stored tokens first. |
+| `HTTPClient` | Injectable transport (tests, proxies, tracing). Defaults to `http.DefaultClient`. |
+
+`rallya.Seg` path-escapes UUID-or-slug segments; `client.BaseURL` may carry a
+trailing slash.
+
+## Behavior notes
+
+- **401 → refresh → retry** (session mode, single-flight): one refresh for
+  concurrent 401s; reused refresh tokens rotate server-side.
+- **API-key mode**: `X-API-Key` header, no refresh. 401 fires `OnAuthFailure`.
+- **Idempotency**: `Orders.Create` auto-generates an idempotency key when
+  `CreateOrderInput.IdempotencyKey` is empty.
+- **Uploads**: covers/images take `[]byte` + filename + content type
+  (multipart), enforced server-side at 5 MB.
+- **Pagination**: list routes take `*PageQuery` (server defaults 1/20, max
+  100); the server echoes `page`/`perPage` on every page envelope. The SDK
+  backfills them from your request (`FillPage`) so `Page[T]` always carries
+  `Items`, `Total`, `Page`, `PerPage`.
+- **Batch check-in**: `ScanBatch` rejects more than 50 codes locally.
+- **`Health.Live`** resolves against the **origin** of `BaseURL` (outside
+  `/api/v1`), no auth.
+- **Public routes** (`ListPublic`, `GetPublic`, `ListPlans`, auth flows) send
+  no auth header.
+
+## Services
+
+All methods return `(T, error)`. Every API failure returns `*rallya.RallyaError`.
+
+### `client.Auth`
+
+| Method | Notes |
+|---|---|
+| `Register(ctx, RegisterInput{Email, Password, FirstName?, LastName?})` | → `TokenPair` |
+| `Login(ctx, LoginInput{Email, Password})` | 403 `EMAIL_NOT_VERIFIED` until verified |
+| `Refresh(ctx, refreshToken)` | Manual rotation (auto-refresh already happens on 401) |
+| `VerifyEmail(ctx, token)` / `VerifyEmailLink(ctx, token)` | POST body / GET link |
+| `VerifyCode(ctx, email, code)` | 6-digit OTP |
+| `ResendVerification(ctx, email)` | |
+| `ForgotPassword(ctx, email)` | Always 200 (no enumeration) |
+| `ResetPassword(ctx, token, newPassword)` | Revokes all sessions |
+| `Logout(ctx)` | Revokes session + tokens |
+| `Me(ctx)` | → `Me` (profile + `Organizations[]`) |
+
+### `client.Orgs`
+
+| Method | Notes |
+|---|---|
+| `Create(ctx, CreateOrgInput{Name, Slug?, Logo?})` | → `Org` |
+| `ListMine(ctx)` | → `[]Org` |
+| `Get` / `Update` / `Remove(ctx, idOrSlug, …)` | Stealth 404 for outsiders |
+| `ListMembers(ctx, idOrSlug, *PageQuery)` | → `Page[OrgMember]` |
+| `AddMember(ctx, idOrSlug, AddMemberInput{Email, Role?})` | role: OWNER/ADMIN/MEMBER |
+| `UpdateMemberRole(ctx, idOrSlug, userID, role)` | Last OWNER can't be demoted |
+| `RemoveMember(ctx, idOrSlug, userID)` | OWNER |
+| `UpdateMyPreferences(ctx, idOrSlug, notifyEvents *bool)` | Own notification prefs |
+| `Invite(ctx, idOrSlug, InviteInput{Email, Role?})` | 7-day TTL |
+| `ListInvites(ctx, idOrSlug, *PageQuery)` | → `Page[OrgInvite]` |
+| `RevokeInvite(ctx, idOrSlug, inviteID)` | |
+| `AcceptInvite` / `DeclineInvite(ctx, token)` | Idempotent |
+| `ListRoles(ctx, idOrSlug)` | → `[]CustomRole` (Pro/Scale) |
+| `DefineRole(ctx, idOrSlug, DefineRoleInput{Name, Permissions})` | Grant-only |
+| `UpdateRole(ctx, idOrSlug, role, permissions)` | |
+| `DeleteRole(ctx, idOrSlug, role)` | Blocked while assigned |
+| `AssignRole` / `UnassignRole(ctx, idOrSlug, role, userID)` | OWNER |
+
+### `client.Events`
+
+| Method | Notes |
+|---|---|
+| `ListPublic(ctx, *EventFilter)` | Published only. `EventFilter{Status?, From?, To?, Q?, Sort?, PageQuery}` |
+| `GetPublic(ctx, idOrSlug)` | Published only |
+| `ListOrg(ctx, orgIDOrSlug, *EventFilter)` | Members see drafts too |
+| `Create(ctx, orgIDOrSlug, CreateEventInput{Title*, Slug?, …})` | Over quota → 402 |
+| `Get` / `Update` / `Remove(ctx, orgIDOrSlug, eventIDOrSlug, …)` | `UpdateEventInput` = partial + `ClearCover?` |
+| `Publish` / `Unpublish` / `Cancel(ctx, orgIDOrSlug, eventIDOrSlug)` | `DRAFT → PUBLISHED`; cancel is terminal |
+| `UploadCover(ctx, orgIDOrSlug, eventIDOrSlug, content []byte, filename, contentType string)` | ≤ 5 MB, jpeg/png/webp |
+| `UploadImages(ctx, orgIDOrSlug, eventIDOrSlug, content []byte, filename, contentType string)` | → `EventImage` |
+| `ListImages(ctx, orgIDOrSlug, eventIDOrSlug)` | → `Page[EventImage]` |
+
+### `client.Tickets`
+
+| Method | Notes |
+|---|---|
+| `ListPublic(ctx, eventIDOrSlug)` | Public; UUID only |
+| `List(ctx, orgIDOrSlug, eventIDOrSlug)` | → `Page[TicketType]` |
+| `Create(ctx, orgIDOrSlug, eventIDOrSlug, CreateTicketInput{Name*, QuantityTotal*, PriceCents, …})` | |
+| `Get` / `Update` / `Remove(ctx, orgIDOrSlug, eventIDOrSlug, ticketID, …)` | |
+| `Activate` / `Pause(ctx, orgIDOrSlug, eventIDOrSlug, ticketID)` | Only ACTIVE sells |
+
+### `client.Orders`
+
+| Method | Notes |
+|---|---|
+| `Create(ctx, eventIDOrSlug, CreateOrderInput{TicketTypeID*, Quantity*, IdempotencyKey?})` | Key auto-generated when empty |
+| `ListMine(ctx, *PageQuery)` | → `Page[Order]` |
+| `Get(ctx, orderID)` | Others' orders → stealth 404 |
+| `Cancel(ctx, orderID)` | Terminal states reject |
+
+### `client.Payments`
+
+| Method | Notes |
+|---|---|
+| `Checkout(ctx, orderID)` | → `CheckoutResponse{URL, SessionID}`. 503 when unconfigured |
+
+### `client.Attendees`
+
+| Method | Notes |
+|---|---|
+| `ListMine(ctx, *PageQuery)` | → `Page[Attendee]` |
+| `GetMine(ctx, attendeeID)` | |
+| `CancelMine(ctx, attendeeID)` | |
+| `ListRoster(ctx, orgIDOrSlug, eventIDOrSlug, *PageQuery)` | ADMIN+ door roster |
+| `AddWalkIn(ctx, orgIDOrSlug, eventIDOrSlug, WalkInInput{Email, Name?})` | |
+| `Correct(ctx, orgIDOrSlug, eventIDOrSlug, attendeeID, CorrectAttendeeInput{Name?, Email?})` | |
+
+### `client.Checkin`
+
+Door scan refusals are **200 + outcome**, never errors (every attempt logs).
+
+| Method | Notes |
+|---|---|
+| `Scan(ctx, orgIDOrSlug, eventIDOrSlug, ScanInput{Code?, AttendeeID?})` | Exactly one of Code / AttendeeID |
+| `ScanBatch(ctx, orgIDOrSlug, eventIDOrSlug, codes []string)` | → `ScanBatchResponse{Results []ScanResult}`, ≤ 50 |
+| `Revert(ctx, orgIDOrSlug, eventIDOrSlug, attendeeID)` | 422 unless checked-in; 422 with unvoided kits |
+| `Stats(ctx, orgIDOrSlug, eventIDOrSlug)` | → `CheckinStats` |
+
+### `client.Kits`
+
+| Method | Notes |
+|---|---|
+| `CreateKit(ctx, orgIDOrSlug, eventIDOrSlug, CreateKitInput{Name, Description?, QuantityTotal})` | Pro/Scale; 201 |
+| `ListKits(ctx, orgIDOrSlug, eventIDOrSlug)` | → `[]KitType` with live tallies |
+| `UpdateKit(ctx, orgIDOrSlug, eventIDOrSlug, kitID, UpdateKitInput{…})` | Quantity can't drop below collected |
+| `DeleteKit(ctx, orgIDOrSlug, eventIDOrSlug, kitID)` | 422 with active rows — void first |
+| `Collect(ctx, orgIDOrSlug, eventIDOrSlug, kitID, CollectKitInput{AttendeeID, Reserve?, IdempotencyKey?})` | Immediate; `Reserve: true` holds PENDING; 422 unless checked-in; 409 |
+| `MarkCollected(ctx, orgIDOrSlug, eventIDOrSlug, collectionID)` | PENDING → COLLECTED |
+| `Void(ctx, orgIDOrSlug, eventIDOrSlug, collectionID)` | Either state; frees re-issue |
+| `ListCollections(ctx, orgIDOrSlug, eventIDOrSlug, *CollectionFilter)` | `CollectionFilter{KitID?, Status?, AttendeeID?}` |
+| `ListKitCollections(ctx, orgIDOrSlug, eventIDOrSlug, kitID, status CollectionStatus)` | Per-kit handouts |
+
+### `client.Subscriptions`
+
+| Method | Notes |
+|---|---|
+| `ListPlans(ctx)` | Public catalog: tiers, limits, features, prices |
+| `Get(ctx, orgIDOrSlug)` | Org billing; absent subscription reads FREE |
+| `Checkout(ctx, orgIDOrSlug, SubscriptionPlanPro \| SubscriptionPlanScale)` | OWNER; → `CheckoutSession`; 503 unconfigured |
+| `Portal(ctx, orgIDOrSlug)` | OWNER self-serve manage/cancel; → `PortalSession` |
+
+### `client.Audit` (ADMIN+ / superadmin)
+
+| Method | Notes |
+|---|---|
+| `ListOrg(ctx, orgIDOrSlug, *AuditQuery)` | `AuditQuery{Action?, ObjectType?, ObjectID?, Actor?, Org?, Since?, Until?, PageQuery}` |
+| `ListPlatform(ctx, *AuditQuery)` | Superadmin cross-tenant |
+
+### `client.Admin` (superadmin)
+
+| Method | Notes |
+|---|---|
+| `ListOrgs(ctx, *PageQuery)` | → `Page[AdminOrg]` |
+| `GetOrg(ctx, id)` | → `map[string]any` |
+| `ReseedOrgPolicies(ctx, id)` | → `PolicyDiff` |
+| `SearchUsers(ctx, *UserSearchQuery)` | query + paging |
+| `GetUser(ctx, id)` | → `map[string]any` |
+| `ListUserOrders(ctx, id, *PageQuery)` | |
+| `SyncUserPolicies(ctx, id)` | → `PolicyDiff` |
+
+### `client.Health`
+
+| Method | Notes |
+|---|---|
+| `Live(ctx)` | → `HealthStatus{Status, App}`; outside `/api/v1`, no auth |
+| `Hello(ctx)` | Public hello route |
+
+## Errors
+
+Every API failure returns `*rallya.RallyaError`:
+
+| Field / helper | Meaning |
+|---|---|
+| `Status` | HTTP status |
+| `Code` | Machine code (`EMAIL_NOT_VERIFIED`, `UPGRADE_REQUIRED`, …) |
+| `Message` | Server `{error}` text |
+| `Details` | Full parsed body when present |
+| `RetryAfterMs` | Parsed `Retry-After` in ms (429 only) |
+| `IsUnauthorized()` / `IsForbidden()` / `IsNotFound()` / `IsRateLimited()` | Convenience helpers |
+| `rallya.IsNotFoundOrForbidden(err)` | 404/403 stealth helper |
+
+```go
+_, err = client.Orgs.Get(ctx, "acme")
+var re *rallya.RallyaError
+if errors.As(err, &re) && re.IsRateLimited() {
+    time.Sleep(time.Duration(*re.RetryAfterMs) * time.Millisecond)
+}
+if rallya.IsNotFoundOrForbidden(err) { /* missing or no access */ }
+```
+
+## Core types
+
+`TokenPair` · `Page[T]` `{Items, Total, Page, PerPage}` · `PageQuery{Page, PerPage}` ·
+`MemberRole` · `EventStatus` · `TicketStatus` · `OrderStatus` · `AttendeeStatus` ·
+`CheckinOutcome` · `CheckinMethod` · `CollectionStatus` · `SubscriptionPlan` ·
+`SubscriptionStatus` · `PlanLimits` · `PolicyDiff` — see [Schemas](/docs/schemas)
+for the wire shapes and [Swagger](/docs/swagger) for machine truth.
+
+## Stripe webhooks (`webhooks` package)
+
+Stdlib-only HMAC verification over the **raw** body — handlers must not JSON-parse first:
+
+```go
+res := webhooks.VerifySignature(rawBody, r.Header.Get("Stripe-Signature"),
+    os.Getenv("STRIPE_WEBHOOK_SIGNING_SECRET"))
+if !res.Verified { /* 400 */ }
+_ = res.EventID
+```
+
+`VerifySignature(rawBody []byte, signatureHeader, webhookSecret string, toleranceSecs ...int)` — default tolerance 300s.
+
+## Low-level access
+
+```go
+type MyShape struct{ OK bool `json:"ok"` }
+out, err := rallya.Do[MyShape](ctx, client, "orgs/acme/api-keys",
+    rallya.RequestOptions{Method: "GET"})
+```
+
+## Development
+
+```bash
+gofmt -l . && go vet ./... && go build ./... && go test ./...  # gates
+go test -race ./...                                            # race-clean
+```
