@@ -1,4 +1,4 @@
-import { docsLlms, source } from "@/lib/source";
+import { getSource } from "@/lib/source";
 import { notFound } from "next/navigation";
 
 export const revalidate = false;
@@ -8,6 +8,7 @@ export async function GET(
   { params }: RouteContext<"/llms.mdx/docs/[[...slug]]">,
 ) {
   const { slug } = await params;
+  const { source, docsLlms } = await getSource();
   // remove the appended "content.md", `/docs/index.md` is rewritten to the root page
   const slugs = slug?.slice(0, -1) ?? [];
   if (slugs.at(-1) === "index") slugs.pop();
@@ -21,7 +22,8 @@ export async function GET(
   });
 }
 
-export function generateStaticParams() {
+export async function generateStaticParams() {
+  const { source } = await getSource();
   return source.generateParams().map((item) => ({
     ...item,
     slug: [...item.slug, "content.md"],

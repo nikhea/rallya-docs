@@ -1,4 +1,6 @@
-import { source } from "@/lib/source";
+import { getSource } from "@/lib/source";
 import { createFromSource } from "fumadocs-core/search/server";
 
-export const { GET } = createFromSource(source);
+// passing the source as a getter re-indexes the search server whenever the
+// source is invalidated by the Sanity revalidation webhook
+export const { GET } = createFromSource(async () => (await getSource()).source);
