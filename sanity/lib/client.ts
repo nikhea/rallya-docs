@@ -1,7 +1,15 @@
 import { createClient } from "next-sanity";
 import type { SanityClient } from "@sanity/client";
 
-export const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET ?? "production";
+/**
+ * Project "Rallya Docs" (org: rallya). These are not secrets — the embedded
+ * studio ships them to the browser by design — so they have committed
+ * defaults and the env vars only exist as overrides for other deployments.
+ */
+const DEFAULT_PROJECT_ID = "ejoyp5f4";
+const DEFAULT_DATASET = "production";
+
+export const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET || DEFAULT_DATASET;
 export const apiVersion = "2025-11-01";
 
 let cachedClient: SanityClient | null = null;
@@ -26,11 +34,5 @@ export function getClient(): SanityClient {
 }
 
 export function getProjectId(): string {
-  const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID;
-  if (!projectId) {
-    throw new Error(
-      "NEXT_PUBLIC_SANITY_PROJECT_ID is not set. Copy .env.example to .env.local locally, or set the NEXT_PUBLIC_SANITY_* / SANITY_* env vars in your build environment (see .env.example).",
-    );
-  }
-  return projectId;
+  return process.env.NEXT_PUBLIC_SANITY_PROJECT_ID || DEFAULT_PROJECT_ID;
 }

@@ -4,11 +4,11 @@ import { defineConfig } from "sanity";
 import type { InputProps } from "sanity";
 import { structureTool } from "sanity/structure";
 import { schemaTypes } from "./sanity/schema";
-import { dataset } from "./sanity/lib/client";
+import { dataset, getProjectId } from "./sanity/lib/client";
 
-// no module-eval throw when the env var is absent (keeps builds without
-// secrets green; the studio shows Sanity's own config screen instead)
-const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "";
+// not secrets — the studio ships them to the browser by design; env vars
+// only override for other deployments
+const projectId = getProjectId();
 
 /**
  * Sanity lazy-loads built-in inputs; without a boundary of their own they
