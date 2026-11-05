@@ -16,13 +16,15 @@ curl -X POST localhost:8080/api/v1/orgs/acme/api-keys \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"name":"door-tablet-1","scopes":["checkin:create"],"expiresAt":"2027-01-01T00:00:00Z"}'
-# → { apiKey: {...metadata}, key: "rk_live_..." }  — raw secret shows ONCE
+# → 201 flat ApiKeyCreated: { id, name, prefix, scopes, expiresAt?, createdAt,
+#   createdBy, lastUsedAt?, revokedAt?, key: "rk_live_..." }
+#   — raw secret shows ONCE, in the same object as the metadata
 ```
 
 TypeScript:
 
 ```ts
-const created = await client.request("orgs/acme/api-keys", {
+const created = await client.request<{ key: string }>("orgs/acme/api-keys", {
   method: "POST",
   body: { name: "door-tablet-1", scopes: ["checkin:create"] },
 });

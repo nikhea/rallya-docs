@@ -6,7 +6,10 @@ icon: Route
 
 Base path `/api/v1` (health at `GET /health`, Swagger UI at
 `/swagger/index.html`). Auth: `Authorization: Bearer <accessToken>` or
-`X-API-Key` for server keys. Org routes take UUID **or** slug unless noted.
+`X-API-Key` for server keys (spec documents `BearerAuth` only — see
+[Swagger & OpenAPI](/docs/swagger)). Org routes take UUID **or** slug unless
+noted. Field-level shapes: [Schemas](/docs/schemas). Typed clients:
+[SDKs](/docs/sdks).
 
 ## Auth (public unless noted)
 
@@ -102,3 +105,19 @@ unconfigured) · `POST /orgs/:id/subscription/portal` (OWNER).
 🔒 = bearer auth required. 401 expired/revoked · 403 wrong scope ·
 404 missing-or-no-access · 409 conflict · 413 batch over cap ·
 422 bad transition · 429 rate-limited (+`Retry-After`).
+
+## Response notes
+
+- Every `*Page` envelope is `{items, total, page, perPage}` (defaults 1/20,
+  max 100). Both SDKs backfill `page`/`perPage` from the request when a route
+  omits them, so clients always see a complete envelope.
+- `POST .../kits` and `POST .../kits/:kitId/collect` return **201**;
+  `POST /orgs/:id/subscription/checkout` returns **201** `{url, sessionId}`.
+- `POST /orgs/:id/api-keys` returns **201** flat `ApiKeyCreated`
+  (`key` shown once, same object as the metadata).
+- Kit-collection lists (`GET .../kit-collections`, `GET .../kits/:kitId/collections`)
+  return `CollectionListResponse` — `page`/`perPage` are always `1`/len(items)
+  server-side since these lists are not yet cursor-paginated.
+- `GET .../checkin/stats` → `{registered, checkedIn, cancelled, total}`.
+- Cover/image uploads accept `multipart/form-data` with field `cover` /
+  `images`, ≤ 5 MB, MIME sniffed (jpeg/png/webp).

@@ -1,12 +1,25 @@
 ---
 title: SDKs
-description: Typed clients for TypeScript and Go.
+description: Typed clients for TypeScript and Go — install, auth modes, and where the full references live.
 icon: Code
 ---
 
-## TypeScript — `@rallya/sdk`
+Two official SDKs, same API surface:
 
-[npm](https://www.npmjs.com/package/@rallya/sdk) · [GitHub](https://github.com/nikhea/rallya-js-sdk)
+| | TypeScript | Go |
+|---|---|---|
+| Package | [`@rallya/sdk`](https://www.npmjs.com/package/@rallya/sdk) | `github.com/nikhea/rallya-go-sdk` |
+| Repo | [nikhea/rallya-js-sdk](https://github.com/nikhea/rallya-js-sdk) | [nikhea/rallya-go-sdk](https://github.com/nikhea/rallya-go-sdk) |
+| Runtime | Node 18+, browsers, edge (fetch) | stdlib only |
+| Types | Generated from spec (`openapi-typescript`) + hand-mirrored aliases | Hand-written port |
+| Full reference | [TypeScript SDK Reference](/docs/sdk-typescript) | [Go SDK Reference](/docs/sdk-go) |
+
+Both implement the same contract: `401 → refresh → retry` (single-flight) for
+user sessions, `X-API-Key` mode for servers, idempotent creates, backfilled
+pagination, and refusals-as-data for door scans (200 + outcome, never
+errors).
+
+## TypeScript — quickstart
 
 ```bash
 npm i @rallya/sdk
@@ -28,14 +41,11 @@ await client.kits.collect("acme", "fest", kitId, { attendeeId });
 await client.subscriptions.checkout("acme", "PRO");
 ```
 
-Zero runtime dependencies, auto `401 → refresh → retry`, `X-API-Key`
-mode for servers (`new RallyaClient({ baseUrl, apiKey })`), Stripe webhook
-helper under `@rallya/sdk/node`. Every API failure throws `RallyaError`
-with `status/code/retryAfterMs`.
+Zero runtime dependencies, `@rallya/sdk/node` Stripe webhook verifier,
+`RallyaError` with `status/code/retryAfterMs`. Method-by-method reference:
+[TypeScript SDK Reference](/docs/sdk-typescript).
 
-## Go — `rallya-go-sdk`
-
-[GitHub](https://github.com/nikhea/rallya-go-sdk)
+## Go — quickstart
 
 ```bash
 go get github.com/nikhea/rallya-go-sdk
@@ -53,4 +63,28 @@ collected, _ := client.Kits.Collect(ctx, "acme", "fest", kitID,
 ```
 
 Stdlib-only, same refresh semantics, `*rallya.RallyaError` failures, and a
-`webhooks` package for Stripe verification.
+`webhooks` package for Stripe verification. Method-by-method reference:
+[Go SDK Reference](/docs/sdk-go).
+
+## Which auth mode?
+
+| Caller | Mode | Notes |
+|---|---|---|
+| Browser / mobile user app | Token store (`getTokens`/`setTokens`) | 15-min JWT + 30-day refresh rotation |
+| Server job / cron / door tablet / CI | `apiKey` (`rk_live_*`) | Per-org, scoped, revocable, no refresh cycle |
+
+Never pass both to one client — construction throws. Mint keys with user auth
+(ADMIN+): see [API Keys](/docs/api-keys).
+
+## Errors in one line
+
+Every failure throws/returns a typed error with `status`, `code?`, `message`
+(`retryAfterMs` on 429s). Stealth 404s mean "not found **or** no access" —
+both SDKs export an `isNotFoundOrForbidden` helper. Details:
+[API Conventions](/docs/api-conventions).
+
+## Spec sync
+
+`@rallya/sdk` generates its wire types from the backend Swagger spec on every
+release (`npm run gen:check` guards drift); the Go SDK is a hand port kept in
+step by review. Pipeline details: [Swagger & OpenAPI](/docs/swagger).

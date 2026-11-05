@@ -1,84 +1,234 @@
 ---
 title: Schemas
-description: Core object shapes with required fields and enums.
+description: Every object on the wire — the complete 99-definition index, grouped by domain.
 icon: Database
 ---
 
-`*` = required. Timestamps are RFC 3339 strings. IDs are UUIDs unless a
-route documents UUID-or-slug. Full machine truth: Swagger
-`/swagger/index.html` (99 definitions).
+`*` = required. Timestamps are RFC 3339 strings. IDs are UUIDs unless a route
+documents UUID-or-slug. Field lists below were regenerated from
+`rallya/docs/swagger.json` (99 definitions, `swag init` output) — package
+prefixes match between spec and Go code (`dto.` auth, `orgdto.` orgs, …).
+Machine truth: [Swagger & OpenAPI](/docs/swagger), `/swagger/index.html`.
 
-## Auth
+Type notation: `string`, `int`, `bool`, `datetime`, `[]T` array,
+`→Name` = `$ref` to another definition in this index.
 
-**TokenPair** — `*accessToken, *refreshToken`
+## Cross-cutting
 
-**Me** — `*id, *email, *emailVerified, *profile{firstName?, lastName?}, organizations[]?`
-(`organizations` omitted when unwired; each `{id, slug, name, role}`)
+**Error envelope** — `{error}` or `{error, code?}` (`dto.ErrorResponse`).
+Billing codes: `UPGRADE_REQUIRED` (402), `BILLING_UNAVAILABLE` (503),
+`ALREADY_SUBSCRIBED` (409), `INVALID_PLAN` (400). Auth code:
+`EMAIL_NOT_VERIFIED` (403). Rate limits (429) carry `Retry-After`.
 
-**Error envelope** — `{error, code?}`. Billing codes: `UPGRADE_REQUIRED`
-(402), `BILLING_UNAVAILABLE` (503), `ALREADY_SUBSCRIBED` (409),
-`INVALID_PLAN` (400). Auth code: `EMAIL_NOT_VERIFIED` (403).
+**Page** — every `*Page` is `{items[], total, page, perPage}` with server
+defaults 1/20 and max 100 per page. Both SDKs backfill `page`/`perPage`
+from the request when a route omits them.
 
-**Page** — `{items[], total, page, perPage}` (defaults 1/20, max 100).
+## Auth (`dto.*`)
 
-## Organizations
+```
+dto.TokenPair                 accessToken: string, refreshToken: string
+dto.Register                  email: string *, password: string *, firstName: string, lastName: string
+dto.Login                     email: string *, password: string *
+dto.Refresh                   refreshToken: string *
+dto.VerifyEmail               token: string *
+dto.VerifyByCode              email: string *, code: string *
+dto.ResendVerification        email: string *
+dto.ForgotPassword            email: string *
+dto.ResetPassword             token: string *, newPassword: string *
+dto.Me                        id, email, emailVerified, profile: →dto.Profile, organizations: []→dto.OrgMembership
+dto.Profile                   firstName: string, lastName: string
+dto.OrgMembership             id, joinedAt, name, role, slug
+dto.Message                   message: string
+dto.ErrorResponse             error: string
+dto.EmailNotVerifiedResponse  error: string, code: string   (403 EMAIL_NOT_VERIFIED)
+```
 
-**Org** — `*id, *name, *slug, logoUrl?, role? (my role), *createdAt`
+## Organizations & IAM (`orgdto.*`)
 
-**Member** — `*userId, *email, *name, *emailVerified, *role, *joinedAt`.
-Roles: `OWNER > ADMIN > MEMBER`.
+```
+orgdto.Org                    id, createdAt, logoUrl, name, role, slug
+orgdto.CreateOrg              name: string *, logo: string, slug: string
+orgdto.UpdateOrg              logo: string, name: string, slug: string
+orgdto.Member                 userId, email, emailVerified, joinedAt, name, role
+orgdto.AddMember              email: string *, role: enum[OWNER, ADMIN, MEMBER]
+orgdto.UpdateMemberRole       role: enum[OWNER, ADMIN, MEMBER] *
+orgdto.UpdateMyPreferences    notifyEvents: bool
+orgdto.MembersPage            items[]→Member, page, perPage, total
+orgdto.Invite                 createdAt, email, expiresAt, id, role
+orgdto.InviteMember           email: string *, role: enum[OWNER, ADMIN, MEMBER]
+orgdto.AcceptInvite           token: string *
+orgdto.DeclineInvite          token: string *
+orgdto.InvitesPage            items[]→Invite, page, perPage, total
+orgdto.CustomRole             createdAt, holders, id, name, permissions: []→orgdto.RolePermission
+orgdto.DefineRole             name: string *, permissions: []→RolePermission *
+orgdto.UpdateRolePermissions  permissions: []→RolePermission *
+orgdto.RolePermission         action: string, object: string
+orgdto.RoleAssignment         userId: string *
+orgdto.ApiKey                 createdAt, createdBy, expiresAt, id, lastUsedAt, name, prefix, revokedAt, scopes: []string
+orgdto.ApiKeyCreated          ApiKey fields + key: string   (raw secret, shown ONCE, flat response)
+orgdto.CreateApiKey           name: string *, expiresAt: string, scopes: []string
+orgdto.ApiKeysPage            items[]→ApiKey, page, perPage, total
+orgdto.MessageAlias           message: string
+orgdto.ErrorAlias             error: string
+```
 
-**Invite** — `{id, email, role, expiresAt, createdAt}`. TTL 7 days.
-
-**CustomRole** — `{id, name, permissions[{object, action}], holders}`.
-Grantable objects: `org, member, invite, event, ticket, attendee,
+Grantable permission objects: `org, member, invite, event, ticket, attendee,
 checkin, kit, audit, role, apikey`.
 
-**ApiKey / ApiKeyCreated** — metadata `{id, name, prefix, scopes[],
-expiresAt?}`; created adds one-time `key` (`rk_live_…`, shown once).
+## Events & images (`eventdto.*`)
 
-## Events & tickets
+```
+eventdto.Event                id, capacity, coverUrl, createdAt, description,
+                              endsAt, location, slug, startsAt, status,
+                              title, updatedAt, venue
+eventdto.CreateEvent          title: string *, capacity, description, endsAt,
+                              location, slug, startsAt, venue
+eventdto.UpdateEvent          capacity, clearCover, description, endsAt,
+                              location, slug, startsAt, title, venue
+eventdto.EventsPage           items[]→Event, page, perPage, total
+eventdto.EventImage           bytes, createdAt, format, height, id, publicId, url, width
+eventdto.ImagesPage           items[]→EventImage, page, perPage, total
+eventdto.MessageAlias         message: string
+eventdto.ErrorAlias           error: string
+```
 
-**Event** — `*id, *title, *slug, description?, venue?, location?,
-startsAt?, endsAt?, capacity? (null = unlimited), coverUrl?,
-*status (DRAFT|PUBLISHED|CANCELLED), *createdAt, *updatedAt`
+Event `status`: `DRAFT | PUBLISHED | CANCELLED` — never changed via update.
 
-**TicketType** — `*id, *eventId, *name, description?, *priceCents,
-*currency, *quantityTotal, quantitySold, remaining, forSale,
-unavailableReason?, maxPerOrder?, *status (DRAFT|ACTIVE|PAUSED), soldOut`
+## Tickets (`ticketdto.*`)
 
-**EventImage** — `{id, url, publicId, format?, bytes, width?, height?}`
+```
+ticketdto.TicketType          id, createdAt, currency, description, eventId,
+                              forSale, maxPerOrder, name, priceCents,
+                              quantitySold, quantityTotal, remaining,
+                              saleEndsAt, saleStartsAt, soldOut, status,
+                              unavailableReason
+ticketdto.CreateTicket        name: string *, quantityTotal: int *, currency,
+                              description, maxPerOrder, priceCents,
+                              saleEndsAt, saleStartsAt
+ticketdto.UpdateTicket        currency, description, maxPerOrder, name,
+                              priceCents, quantityTotal, saleEndsAt, saleStartsAt
+ticketdto.TicketsPage         items[]→TicketType, page, perPage, total
+ticketdto.MessageAlias        message: string
+ticketdto.ErrorAlias          error: string
+```
 
-## Orders & attendees
+Ticket `status`: `DRAFT | ACTIVE | PAUSED` — only `ACTIVE` sells.
 
-**Order** — `*id, *eventId, *ticketTypeId, *quantity, *priceCents,
-*currency, *status (PENDING|PENDING_PAYMENT|CONFIRMED|CANCELLED|EXPIRED),
-expiresAt?`. Free orders confirm immediately.
+## Orders & payments (`orderdto.*`, `paymentdto.*`)
 
-**Attendee** — `*id, orderId?, unitIndex, *eventId, userId?, *email,
-name?, *status (REGISTERED|CHECKED_IN|CANCELLED), qrPayload? (emails
-only), checkedInAt?`. Rows never deleted.
+```
+orderdto.Order                id, createdAt, currency, eventId, expiresAt,
+                              priceCents, quantity, status, ticketTypeId
+orderdto.CreateOrder          ticketTypeId: string *, quantity: int *, idempotencyKey: string
+orderdto.OrdersPage           items[]→Order, page, perPage, total
+orderdto.ErrorAlias           error: string
+paymentdto.CheckoutResponse   sessionId: string, url: string
+paymentdto.MessageAlias       message: string
+paymentdto.ErrorAlias         error: string
+```
 
-**ScanResult** — `{outcome (CHECKED_IN|ALREADY_CHECKED_IN|INVALID_CODE|
-CANCELLED|WRONG_EVENT|REVERTED), method (qr|manual), attendeeId?,
-checkedInAt?}`. Refusals are 200, never errors.
+Order `status`: `PENDING | PENDING_PAYMENT | CONFIRMED | CANCELLED | EXPIRED`.
+Free (0-cent) orders confirm immediately.
 
-## Kits
+## Attendees (`attendeedto.*`)
 
-**KitResponse** — `*id, *eventId, *name, description?,
-*quantityTotal, *pending, *collected, *voided, *remaining`
+```
+attendeddto.Attendee          id, checkedInAt, createdAt, email, eventId,
+                              name, orderId, qrPayload, status, unitIndex, userId
+attendeddto.AddAttendee       email: string *, name: string
+attendeddto.CorrectAttendee   email: string, name: string
+attendeddto.AttendeesPage     items[]→Attendee, page, perPage, total
+attendeddto.ErrorAlias        error: string
+```
 
-**CollectionResponse** — `*id, *kitId, kitName?, *eventId, *attendeeId,
-*status (PENDING|COLLECTED|VOIDED), collectedAt?, collectedBy?`.
-`CollectRequest`: `*attendeeId, reserve?, idempotencyKey?`.
+Attendee `status`: `REGISTERED | CHECKED_IN | CANCELLED`. Rows are never
+deleted. `qrPayload` is only present on rows minted for email delivery.
 
-## Subscriptions
+## Check-in (`checkindto.*`)
 
-**Tier** — `{plan (FREE|PRO|SCALE), name, priceId?, monthlyCents?,
-currency?, limits{maxEvents, maxMembers, maxAttendeesPerEvent,
-maxKitsPerEvent (-1 unlimited, 0 disabled)}, features[]}`.
-Free: 3/5/200/0, no features. Pro: 25/25/2000/10, all features. Scale:
-200/200/20000/−1, all features.
+```
+checkindto.ScanRequest        attendeeId: string, code: string   (exactly one)
+checkindto.ScanResult         attendeeId, checkedInAt, method, outcome
+checkindto.BatchRequest       codes: []string                     (max 50)
+checkindto.BatchResult        results: []→checkindto.ScanResult
+checkindto.RevertRequest      attendeeId: string
+checkindto.StatsResponse      cancelled, checkedIn, registered, total
+checkindto.ErrorAlias         error: string
+```
 
-**Subscription** — `{plan, status (ACTIVE|PAST_DUE|CANCELED),
-currentPeriodEnd?, cancelAtPeriodEnd}`. Absent reads FREE/ACTIVE.
+`outcome`: `CHECKED_IN | ALREADY_CHECKED_IN | INVALID_CODE | CANCELLED |
+WRONG_EVENT | REVERTED` · `method`: `qr | manual`. Refusals are 200 + outcome,
+never errors.
+
+## Kits (`kitdto.*`)
+
+```
+kitdto.KitResponse            id, collected, createdAt, description, eventId,
+                              name, pending, quantityTotal, remaining, voided
+kitdto.CreateKitRequest       name: string, quantityTotal: int, description: string
+kitdto.UpdateKitRequest       description: string, name: string, quantityTotal: int
+kitdto.CollectRequest         attendeeId: string, idempotencyKey: string, reserve: bool
+kitdto.CollectionResponse     attendeeId, collectedAt, collectedBy, createdAt, eventId,
+                              id, kitId, kitName, status
+kitdto.CollectionListResponse items[]→CollectionResponse, page, perPage, total
+kitdto.ErrorAlias             error: string
+```
+
+Collection `status`: `PENDING | COLLECTED | VOIDED`. Collect returns **201**;
+`reserve: true` holds a PENDING unit. Attendee must be `CHECKED_IN` (422).
+
+## Subscriptions (`subdto.*`)
+
+```
+subdto.TierResponse           currency, features: []string, limits: →Limits,
+                              monthlyCents, name, plan, priceId
+subdto.Limits                 maxAttendeesPerEvent, maxEvents, maxKitsPerEvent, maxMembers
+subdto.SubscriptionResponse   cancelAtPeriodEnd, currentPeriodEnd, plan, status
+subdto.CheckoutRequest        plan: string   (PRO | SCALE)
+subdto.CheckoutResponse       sessionId: string, url: string
+subdto.PortalResponse         url: string
+subdto.ErrorAlias             error: string, code: string
+```
+
+`plan`: `FREE | PRO | SCALE` · `status`: `ACTIVE | PAST_DUE | CANCELED`.
+Limits use `-1` = unlimited, `0` = disabled. Free: 3/5/200/0. Pro: 25/25/2000/10.
+Scale: 200/200/20000/−1. Absent subscription reads FREE/ACTIVE.
+
+## Audit (`auditdto.*`)
+
+```
+auditdto.AuditEvent           action, actorId, after, before, createdAt, id,
+                              objectId, objectType, orgId
+auditdto.AuditPage            items[]→AuditEvent, page, perPage, total
+auditdto.ErrorAlias           error: string
+```
+
+## Admin (`admindto.*`)
+
+```
+admindto.OrgSummary           createdAt, id, members, name, slug
+admindto.OrgsPage             items[]→OrgSummary, page, perPage, total
+admindto.OrgDetail            createdAt, id, members: []→MemberRow, name, slug
+admindto.MemberRow            email, emailVerified, joinedAt, name, role, userId
+admindto.UserSummary          createdAt, email, emailVerified, id, name, superAdmin
+admindto.UsersPage            items[]→UserSummary, page, perPage, total
+admindto.UserDetail           createdAt, email, emailVerified, id,
+                              memberships: []→MembershipRow, name, superAdmin
+admindto.MembershipRow        joinedAt, orgId, orgName, orgSlug, role
+admindto.PolicyDiff           added, removed, total
+admindto.ErrorAlias           error: string
+```
+
+## Full inventory
+
+That is all 99 definitions: 15 auth (`dto`) + 24 orgs (`orgdto`) + 8 events
+(`eventdto`) + 6 tickets (`ticketdto`) + 4 orders + 3 payments (`orderdto`,
+`paymentdto`) + 5 attendees (`attendeedto`) + 7 check-in (`checkindto`) + 7 kits
+(`kitdto`) + 7 subscriptions (`subdto`) + 3 audit (`auditdto`) + 10 admin
+(`admindto`). The spec flattens everything into `#/definitions`, so definition
+names are package-prefixed — unique package names per domain are what make
+that namespace collision-free (see [Architecture](/docs/architecture)).
+
+Code samples typed against these definitions are in the
+[TypeScript SDK](/docs/sdk-typescript) and [Go SDK](/docs/sdk-go) references.

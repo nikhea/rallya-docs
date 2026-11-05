@@ -19,7 +19,15 @@ access" — never confirm existence to outsiders. SDKs expose an
 ## Pagination
 
 List routes take `{page, perPage}` (defaults 1/20, max 100) and return
-`{items, total, page, perPage}`.
+`{items, total, page, perPage}`. Both SDKs backfill `page`/`perPage` when a
+route omits them, so clients always see a complete envelope.
+
+## Auth modes on the wire
+
+`Authorization: Bearer <accessToken>` (user sessions) or `X-API-Key: rk_live_*`
+(org server keys). The Swagger spec only declares `BearerAuth` — `X-API-Key`
+is enforced server-side but not expressed in `securityDefinitions`; see
+[Swagger & OpenAPI](/docs/swagger) for spec coverage and known gaps.
 
 ## Rate limits
 
@@ -31,6 +39,5 @@ a proxy).
 ## Full reference
 
 These guides explain; Swagger specifies. Live reference (generated from
-code, always current):
-
-`http://localhost:8080/swagger/index.html`
+code, always current): `http://localhost:8080/swagger/index.html` — see
+[Swagger & OpenAPI](/docs/swagger) for how it is produced and consumed.
