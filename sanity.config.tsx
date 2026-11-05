@@ -4,13 +4,11 @@ import { defineConfig } from "sanity";
 import type { InputProps } from "sanity";
 import { structureTool } from "sanity/structure";
 import { schemaTypes } from "./sanity/schema";
+import { dataset } from "./sanity/lib/client";
 
-const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID;
-const dataset = process.env.NEXT_PUBLIC_SANITY_DATASET ?? "production";
-
-if (!projectId) {
-  throw new Error("NEXT_PUBLIC_SANITY_PROJECT_ID is not set");
-}
+// no module-eval throw when the env var is absent (keeps builds without
+// secrets green; the studio shows Sanity's own config screen instead)
+const projectId = process.env.NEXT_PUBLIC_SANITY_PROJECT_ID ?? "";
 
 /**
  * Sanity lazy-loads built-in inputs; without a boundary of their own they

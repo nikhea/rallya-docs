@@ -14,7 +14,7 @@ import {
 } from "fumadocs-core/mdx-plugins";
 import { lucideIconsPlugin } from "fumadocs-core/source/plugins/lucide-icons";
 import { pagesQuery, sectionsQuery } from "@/sanity/lib/queries";
-import { client } from "@/sanity/lib/client";
+import { getClient } from "@/sanity/lib/client";
 
 type SanitySection = {
   _id: string;
@@ -93,6 +93,7 @@ function buildMetaPages(pages: SanityPage[], sections: SanitySection[]) {
 }
 
 async function build() {
+  const client = getClient();
   const [pages, sections] = await Promise.all([
     client.fetch<SanityPage[]>(pagesQuery),
     client.fetch<SanitySection[]>(sectionsQuery),
