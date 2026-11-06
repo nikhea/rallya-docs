@@ -34,22 +34,62 @@ visible in the panel.
 How it fits together:
 
 - The browser calls the agent's **public, unauthenticated** endpoint directly —
-  `POST /docs-chat` (AI SDK v7 UI-message SSE). No Next.js API route, and the
-  agent must be reachable from the browser (not just from the server).
+  `POST /docs-chat` (AI SDK v7 UI-message SSE). No Next.js API route proxies the
+  chat stream, and the agent must be reachable from the browser (not just from
+  the server).
 - `app/docs/docs-assistant.tsx` wires `useChatRuntime` (`@assistant-ui/ai-sdk`) to
   an `AssistantChatTransport` pointing at `NEXT_PUBLIC_DOCS_CHAT_URL`.
 - Conversations are **not persisted across reloads**: each page load starts a
   fresh runtime thread; `memory.thread` sent to Mastra is that thread id, and
-  `memory.resource` is the static value of `NEXT_PUBLIC_DOCS_RESOURCE_ID`
-  (`docs-visitor`). One anonymous Postgres thread row is created per runtime
-  thread — see "Thread growth" below.
+  `memory.resource` is the anonymous visitor id from localStorage
+  (`docs_visitor_id`), so one browser's threads group together — see
+  "Anonymous visitor attribution" below.
+
+### Anonymous visitor attribution
+
+Every run that ends syncs a small, non-sensitive attribution payload onto the
+Mastra memory thread as **metadata** (see `plan/anony_vistor.md`):
+
+- **Identity**: a random UUID in `localStorage` (`docs_visitor_id`, long-lived)
+  — also sent as `memory.resource`. A per-tab UUID in `sessionStorage`
+  (`docs_session_id`) groups one browsing session.
+- **Source**: `page` (path), `origin`, `referrer`, `firstReferrer`, and
+  `utmSource` / `utmMedium` / `utmCampaign` (captured from the URL on first
+  load, cached in `sessionStorage`).
+- **Device/network**: `userAgent` (browser-reported) and `ip` — the IP is read
+  **server-side** from `cf-connecting-ip` / `x-forwarded-for` by the
+  same-origin route, never from client input; it is only as trustworthy as
+  your proxy setting those headers (Vercel/Cloudflare do).
+- **Bookkeeping**: `firstSeenAt` / `firstReferrer` are write-once;
+  `lastSeenAt` and the rest are refreshed on every run end.
+
+Flow: when a run ends, `ThreadMetaSync` (mounted inside the assistant runtime
+provider) fires a `useMutation` (React Query, `retry: 2`, fire-and-forget) that
+`POST`s `{ threadId, metadata }` to `/api/docs-visitor-meta`. That Next.js
+Route Handler validates and sanitizes the payload (allowlisted keys, scalars
+only, length caps), attaches the visitor IP, then upserts the merged metadata
+onto the thread via Mastra's memory API (`/api/memory/threads/:id`) using a
+**server-only** admin token. It never blocks chat: failures are retried, then
+logged and dropped.
+
+The Mastra server needs **no code changes** for this. Because `/api/*` is
+token-protected when the agent has SimpleAuth configured, the browser cannot
+call it directly — hence the same-origin proxy. The token lives only in the
+docs deploy env (`DOCS_AGENT_ADMIN_TOKEN`); the agent itself is unchanged.
 
 Environment variables (`.env.local` for dev, deploy env for prod):
 
 | Var | Dev default | Notes |
 | --- | --- | --- |
 | `NEXT_PUBLIC_DOCS_CHAT_URL` | `http://localhost:4111/docs-chat` | Mastra agent runs separately on `:4111`. In prod point at the deployed agent origin, e.g. `https://<agent-host>/docs-chat`. |
-| `NEXT_PUBLIC_DOCS_RESOURCE_ID` | `docs-visitor` | Static resource id reported to Mastra Memory; shared by all anonymous visitors by design. |
+| `DOCS_AGENT_INTERNAL_URL` | `http://localhost:4111` | Server-only. Where `/api/docs-visitor-meta` reaches Mastra's memory API. In prod set to the internal agent origin. |
+| `DOCS_AGENT_ADMIN_TOKEN` | _(unset)_ | Server-only. Bearer for `/api/memory/*`; must match the agent's `DOCS_AGENT_ADMIN_TOKEN`. Required when the agent has SimpleAuth configured; optional in dev. |
+
+**Privacy:** no PII beyond what a browser normally exposes; `ip` and `userAgent`
+are analytics signal, not identity, and are never used for security decisions.
+Clearing site storage resets the anonymous identity. Data lives only on the
+thread row in Postgres; inspect it via Studio or `listMemoryThreads({
+resourceId })` per visitor.
 
 The Mastra server does **not** need code changes, but its CORS must allow the
 docs origin. Dev defaults to `*` via `DOCS_CHAT_CORS_ORIGINS`; set it to the

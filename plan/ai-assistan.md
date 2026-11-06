@@ -149,3 +149,14 @@ Out of scope (future): thread list / history UI (`useRemoteThreadListRuntime` + 
 
 - Mastra still listening on `:4111`; `/docs-chat` still reachable; CORS preflight still `POST` + `Content-Type`.
 - No changes to `rallya-docs-agent` were made by this plan — the backend needs **no** modifications.
+
+## Addendum 2026-11-06 — Anonymous visitor attribution
+
+Superseded: `NEXT_PUBLIC_DOCS_RESOURCE_ID` (the static shared `docs-visitor`
+resource) is removed. `memory.resource` is now the anonymous visitor id from
+localStorage (`docs_visitor_id`, long-lived; per-visitor resource). On every run
+end, `ThreadMetaSync` fires a React Query mutation that POSTs the attribution
+payload to `/api/docs-visitor-meta` (same-origin Route Handler; validates and
+sanitizes, attaches the visitor IP server-side, upserts merged metadata onto the
+thread via Mastra's memory API with a server-only `DOCS_AGENT_ADMIN_TOKEN`).
+The agent needs no code changes. Full details: `plan/anony_vistor.md`.
