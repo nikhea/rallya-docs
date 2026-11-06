@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ComposerAddAttachment,
   ComposerAttachments,
   UserMessageAttachments,
 } from "@/components/assistant-ui/elements/attachment.aui";
@@ -522,11 +521,10 @@ const ComposerAction: FC = () => {
     <div className="aui-composer-action-wrapper relative flex items-center justify-between">
       {ComposerExtra ? (
         <div className="aui-composer-action-start flex items-center gap-1.5">
-          <ComposerAddAttachment />
           <ComposerExtra />
         </div>
       ) : (
-        <ComposerAddAttachment />
+        <span aria-hidden="true" />
       )}
       <div className="flex items-center gap-1.5">
         <AuiIf condition={(s) => s.thread.capabilities.dictation}>
