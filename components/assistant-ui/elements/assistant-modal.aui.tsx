@@ -18,23 +18,31 @@ import {
   useState,
 } from "react";
 import {
-  ThreadListPrimitive,
   useAuiEvent,
   useAuiState,
 } from "@assistant-ui/react";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
-import {
-  ThreadListItems,
-  ThreadListRoot,
-  ThreadListSearch,
-} from "@/components/assistant-ui/elements/thread-list.aui";
+import { ThreadHistoryList } from "@/app/docs/thread-history";
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
 
 type ModalView = "thread" | "list";
 
-export const AssistantModal: FC = () => {
+export type AssistantModalProps = {
+  /** Start a fresh, empty conversation (used by the + button). */
+  onNewThread: () => void;
+  /** Open a previous conversation (History list). */
+  onSelectThread: (id: string) => void;
+  /** Currently open conversation's Mastra thread id, if any. */
+  activeThreadId?: string | undefined;
+};
+
+export const AssistantModal: FC<AssistantModalProps> = ({
+  onNewThread,
+  onSelectThread,
+  activeThreadId,
+}) => {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<ModalView>("thread");
   const thread = useMemo(() => <Thread />, []);
@@ -87,7 +95,7 @@ export const AssistantModal: FC = () => {
           <PopoverPrimitive.Popup
             className="group/modal aui-root aui-modal-content bg-popover text-popover-foreground data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [&[data-open]_.aui-thread-viewport-footer]:animate-in [&[data-open]_.aui-thread-viewport-footer]:fade-in-0 [&[data-open]_.aui-thread-viewport-footer]:slide-in-from-bottom-2 [&[data-open]_.aui-thread-viewport-footer]:fill-mode-backwards [&_.aui-thread-viewport-footer]:bg-popover ring-foreground/10 z-50 flex h-full w-full flex-col gap-0 overflow-clip overscroll-contain rounded-xl p-0 text-base antialiased shadow-[0_16px_48px_-24px_rgb(0_0_0/0.25)] ring-1 transition-none ease-[cubic-bezier(0.32,0.72,0,1)] outline-none data-closed:duration-200 data-open:duration-300 motion-reduce:animate-none dark:shadow-[0_16px_48px_-24px_rgb(0_0_0/0.6)] [&_.aui-thread-root]:bg-inherit motion-reduce:[&_.aui-thread-viewport-footer]:animate-none [&[data-open]_.aui-thread-viewport-footer]:delay-100 [&[data-open]_.aui-thread-viewport-footer]:duration-300 [&[data-open]_.aui-thread-viewport-footer]:ease-[cubic-bezier(0.32,0.72,0,1)]"
           >
-            <AssistantModalHeader view={view} onViewChange={setView} />
+            <AssistantModalHeader view={view} onViewChange={setView} onNewThread={onNewThread} />
             <div className="aui-modal-body relative min-h-0 flex-1">
               <div
                 ref={(node) => {
@@ -98,7 +106,13 @@ export const AssistantModal: FC = () => {
                 {thread}
               </div>
               {view === "list" && (
-                <AssistantModalThreadList onSelect={() => setView("thread")} />
+                <ThreadHistoryList
+                  activeThreadId={activeThreadId}
+                  onSelectThread={(id) => {
+                    onSelectThread(id);
+                    setView("thread");
+                  }}
+                />
               )}
             </div>
           </PopoverPrimitive.Popup>
@@ -111,9 +125,9 @@ export const AssistantModal: FC = () => {
 const AssistantModalHeader: FC<{
   view: ModalView;
   onViewChange: (view: ModalView) => void;
-}> = ({ view, onViewChange }) => {
+  onNewThread: () => void;
+}> = ({ view, onViewChange, onNewThread }) => {
   const title = useAuiState((s) => s.threadListItem.title);
-  const hasThreads = useAuiState((s) => s.threads.threadIds.length > 0);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const shownViewRef = useRef(view);
 
@@ -144,24 +158,23 @@ const AssistantModalHeader: FC<{
           tooltip="Threads"
           side="bottom"
           aria-pressed={view === "list"}
-          disabled={!hasThreads && view === "thread"}
           className="aui-modal-threads text-muted-foreground hover:text-foreground aria-pressed:bg-muted aria-pressed:text-foreground size-7 rounded-md p-0"
           onClick={() => onViewChange(view === "list" ? "thread" : "list")}
         >
           <HistoryIcon className="size-3.5" />
         </TooltipIconButton>
-        <ThreadListPrimitive.New
-          render={
-            <TooltipIconButton
-              tooltip="New Thread"
-              side="bottom"
-              className="aui-modal-new text-muted-foreground hover:text-foreground size-7 rounded-md p-0"
-              onClick={() => onViewChange("thread")}
-            />
-          }
+        <TooltipIconButton
+          tooltip="New Thread"
+          side="bottom"
+          data-slot="aui_modal-new-thread"
+          className="aui-modal-new text-muted-foreground hover:text-foreground size-7 rounded-md p-0"
+          onClick={() => {
+            onNewThread();
+            onViewChange("thread");
+          }}
         >
           <PlusIcon className="size-3.5" />
-        </ThreadListPrimitive.New>
+        </TooltipIconButton>
         <PopoverPrimitive.Close
           render={
             <TooltipIconButton
@@ -178,29 +191,7 @@ const AssistantModalHeader: FC<{
   );
 };
 
-const AssistantModalThreadList: FC<{ onSelect: () => void }> = ({
-  onSelect,
-}) => {
-  const [search, setSearch] = useState("");
-  const hasThreads = useAuiState((s) => s.threads.threadIds.length > 0);
 
-  return (
-    <ThreadListRoot
-      className="aui-modal-thread-list bg-popover absolute inset-0 overflow-y-auto p-2"
-      onClick={(event) => {
-        const target = event.target as Element;
-        if (target.closest("[data-slot='aui_thread-list-item-trigger']")) {
-          onSelect();
-        }
-      }}
-    >
-      {hasThreads && (
-        <ThreadListSearch value={search} onValueChange={setSearch} />
-      )}
-      <ThreadListItems searchQuery={hasThreads ? search : ""} />
-    </ThreadListRoot>
-  );
-};
 
 type AssistantModalButtonProps = Omit<
   ComponentPropsWithoutRef<typeof TooltipIconButton>,

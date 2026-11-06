@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 
 import { AssistantRuntimeProvider, AuiConfig, Suggestions } from "@assistant-ui/react";
 import type { FeedbackAdapter } from "@assistant-ui/core";
@@ -15,7 +15,7 @@ import { getOrCreateVisitorId } from "@/lib/visitor";
 const DOCS_CHAT_URL =
   process.env.NEXT_PUBLIC_DOCS_CHAT_URL ?? "http://localhost:4111/docs-chat";
 
-type AssistantMessageSnapshot = {
+type DocsThreadSnapshot = {
   thread: { id: string; title: string | null; updatedAt: string | null } | null;
   messages: UIMessage[];
 };
@@ -39,39 +39,62 @@ const getTraceId = (message: AdapterMessage): string | undefined => {
   return typeof candidate === "string" && candidate ? candidate : undefined;
 };
 
-const fetchLatestConversation = async (): Promise<AssistantMessageSnapshot> => {
-  const visitorId = getOrCreateVisitorId();
-  if (!visitorId) return { thread: null, messages: [] };
+const fetchThread = async (
+  visitorId: string,
+  threadId: string,
+): Promise<DocsThreadSnapshot> => {
   const res = await fetch(
-    `/api/docs-memory?visitorId=${encodeURIComponent(visitorId)}`,
+    `/api/docs-memory?visitorId=${encodeURIComponent(visitorId)}&threadId=${encodeURIComponent(threadId)}`,
     { cache: "no-store" },
   );
   if (!res.ok) throw new Error(`docs-memory responded ${res.status}`);
-  return (await res.json()) as AssistantMessageSnapshot;
+  return (await res.json()) as DocsThreadSnapshot;
 };
 
 export function DocsAssistant() {
   const visitorId =
     typeof window !== "undefined" ? getOrCreateVisitorId() : "";
-  const { data, isLoading } = useQuery({
-    queryKey: ["docs-memory-latest", visitorId],
-    queryFn: fetchLatestConversation,
-    enabled: visitorId.length > 0,
-    // Fetch once per page load; the chat runtime owns the data afterwards.
+  // undefined → fresh chat on every page load (asked for); set → continue the
+  // selected previous thread (seeded from Mastra).
+  const [activeThreadId, setActiveThreadId] = useState<string | undefined>(undefined);
+
+  const selectThread = useCallback((id: string) => setActiveThreadId(id), []);
+  const newThread = useCallback(() => setActiveThreadId(undefined), []);
+
+  const { data: selected, isLoading, isError } = useQuery({
+    queryKey: ["docs-memory-thread", visitorId, activeThreadId],
+    queryFn: () => fetchThread(visitorId, activeThreadId as string),
+    enabled: activeThreadId !== undefined && visitorId.length > 0,
     staleTime: Number.POSITIVE_INFINITY,
     retry: 1,
   });
 
-  // Brief empty first paint while the latest conversation is restored; on
-  // error the panel simply starts a fresh thread instead of failing.
-  if (visitorId.length > 0 && isLoading && data === undefined) return null;
+  // While a selected previous conversation loads, render nothing; on failure
+  // fall back to a fresh chat instead of blocking.
+  if (activeThreadId !== undefined) {
+    if (isLoading) return null;
+    if (isError) return <ChatSurface key="new" visitorId={visitorId} onSelectThread={selectThread} onNewThread={newThread} />;
+  }
 
-  return <ChatSurface key={data?.thread?.id ?? "new"} snapshot={data} />;
+  return (
+    <ChatSurface
+      key={activeThreadId ?? "new"}
+      visitorId={visitorId}
+      snapshot={selected}
+      activeThreadId={activeThreadId}
+      onSelectThread={selectThread}
+      onNewThread={newThread}
+    />
+  );
 }
 
-const ChatSurface: React.FC<{ snapshot?: AssistantMessageSnapshot | undefined }> = ({
-  snapshot,
-}) => {
+const ChatSurface: React.FC<{
+  visitorId: string;
+  snapshot?: DocsThreadSnapshot | undefined;
+  activeThreadId?: string | undefined;
+  onSelectThread: (id: string) => void;
+  onNewThread: () => void;
+}> = ({ visitorId, snapshot, activeThreadId, onSelectThread, onNewThread }) => {
   // Thumbs feedback on any reply posts to the same-origin /api/docs-feedback
   // proxy (server-held Mastra token). Fire-and-forget via React Query: never
   // blocks or crashes the chat.
@@ -143,7 +166,7 @@ const ChatSurface: React.FC<{ snapshot?: AssistantMessageSnapshot | undefined }>
             // Long-lived anonymous id from localStorage; groups this visitor's
             // threads under one Mastra resource. Falls back to the legacy
             // shared id if storage is unavailable.
-            resource: getOrCreateVisitorId() || "docs-visitor",
+            resource: visitorId || getOrCreateVisitorId() || "docs-visitor",
           },
         },
       }),
@@ -167,7 +190,11 @@ const ChatSurface: React.FC<{ snapshot?: AssistantMessageSnapshot | undefined }>
   return (
     <AssistantRuntimeProvider runtime={runtime} config={config}>
       <ThreadMetaSync />
-      <AssistantModal />
+      <AssistantModal
+        onNewThread={onNewThread}
+        onSelectThread={onSelectThread}
+        activeThreadId={activeThreadId ?? snapshot?.thread?.id}
+      />
     </AssistantRuntimeProvider>
   );
 };

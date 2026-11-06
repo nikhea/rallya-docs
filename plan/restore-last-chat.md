@@ -1,33 +1,48 @@
-# Restore Most Recent Conversation on Reload
+# Conversation History (Restore on Demand)
 
-Status: implemented (`feat/anony-visitor-24-restore-last-chat`).
+Status: implemented (`feat/anony-visitor-25-thread-history`; supersedes the
+auto-restore variant in `feat/anony-visitor-24-restore-last-chat`).
 See also `plan/ai-assistan.md`, `plan/anony_vistor.md`, `plan/feedback.md`.
 
 ## Goal
 
-A page reload should not wipe the panel. The most recent Mastra memory thread
-for the anonymous visitor is re-opened with its full history; new messages
-continue that thread.
+A reload should not trap the user in a stale-looking chat. New page = fresh
+thread; previous conversations live behind **History** and are restored on
+demand (selected from the modal).
 
-## Decisions
+## Decisions (updated 2026-11-06)
 
 | Decision | Choice |
 | --- | --- |
-| Scope | Restore the single most recent thread only; older conversations stay unlisted for now (full RemoteThreadListRuntime is the documented upgrade path) |
-| Transport | Same-origin `GET /api/docs-memory?visitorId=…` proxy; Mastra remains the source of truth; browser cannot call `/api/memory/*` under SimpleAuth |
+| Reload behavior | Fresh empty thread on every page load (no auto-restore) |
+| History access | Modal History view lists the visitor's threads (Mastra `listMemoryThreads({ resourceId })`), grouped by day, searchable |
+| Selecting a thread | Re-mount the runtime with Mastra's `thread.id` + messages from `/api/docs-memory`; replies continue that thread |
+| New Thread (+) | Always available; remounts an empty runtime; Mastra thread created lazily on first message |
+| Proxy shape | `GET /api/docs-memory?visitorId=…` → `{ threads: [...] }`; `…&threadId=…` → `{ thread, messages }`; thread mode verifies `resourceId == visitorId` (no cross-visitor reads) |
+| Invalidation | `thread.runEnd` invalidates the history query (React Query), so new threads appear in History automatically |
+| Client transport | `useQuery(["docs-memory-thread", …])` for the selected thread; `useQuery(["docs-memory-threads", …])` for the list (5 s staleTime) |
+
+Superseded: the "auto-restore most recent thread on reload" behavior from the
+first version of this plan. (Old transport/format decisions below still apply
+unchanged; only the restore trigger was replaced.)
+
+| Decision | Choice |
+| --- | --- |
+| Scope | Restore/select any one of the visitor's threads on demand; nothing restores automatically on mount |
+| Transport | Same-origin `GET /api/docs-memory?visitorId=…[&threadId=…]` proxy |
 | Format | Server reshapes Mastra `format: 2` parts into AI SDK v7 UIMessage parts (`text`, `reasoning` → `state:"done"`, `tool-invocation` → `tool-<name>` + `output-available`); `step-start`, `data-om-*`, `signal` messages dropped |
-| Client | `useQuery(["docs-memory-latest", visitorId], staleTime: Infinity)` → seed `useChatRuntime({ id, messages })`; continuing the chat appends to the same Mastra thread |
+| Client | `useQuery(["docs-memory-thread", …])` seeds `useChatRuntime({ id, messages })`; continuing the chat appends to the same Mastra thread |
 | First visit / no thread / error | Falls back to the fresh empty chat; nothing crashes |
-| Visitor identity | `visitorId` from localStorage (as established); optional reason to also scope history per browser |
+| Visitor identity | `visitorId` from localStorage (as established) |
 
 ## Verification (2026-11-06)
 
-- [x] Live E2E against :3000 + agent: fresh thread created; `GET /api/docs-memory`
-      returns the thread + 2 messages with correctly reshaped parts
-      (`reasoning`, `tool-knowledge_read` → `tool-knowledge_read` output-available)
-- [x] Second turn appended to the same thread; restore returns 4 messages, order intact
-- [x] Edge cases: invalid/missing/encoded visitorIds → 400; unknown visitor → `{thread:null}` 200;
-      legacy `docs-visitor` threads restore without error
-- [x] Verification thread deleted from Postgres afterwards
+- [x] Live E2E against :3000 + agent: fresh thread created; restore returns the
+      thread + messages with correctly reshaped parts
+- [x] Second turn appended to the same thread; restore returns all turns in order
+- [x] List mode returns the visitor's threads (5 real records seen, structured correctly)
+- [x] Ownership check: message mode refuses threads whose resourceId ≠ visitorId
+      (returns 404); invalid visitorIds → 400; unknown visitor → empty list
+- [x] Proxy tested against the dev agent with zero requests to Mastra from the browser
 - [x] `tsc --noEmit`, eslint — clean
-- [ ] Visual confirmation in browser (reload panel → history visible; send a follow-up → same thread continues)
+- [ ] Visual confirmation in browser (History opens; selecting a thread restores it; + starts fresh)

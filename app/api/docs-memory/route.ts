@@ -1,13 +1,15 @@
 /**
- * GET /api/docs-memory?visitorId=<id>
+ * GET /api/docs-memory?visitorId=<id>                 → list this visitor's threads
+ * GET /api/docs-memory?visitorId=<id>&threadId=<tid>  → that thread's messages
  *
- * Same-origin proxy for the most recent conversation of ONE anonymous
- * visitor, so the docs panel can restore it after a page reload (Mastra is
- * the source of truth; the browser cannot call /api/memory/* directly when
- * the agent enforces SimpleAuth).
+ * Same-origin proxy for this anonymous visitor's conversation history (Mastra
+ * is the source of truth; the browser cannot call /api/memory/* directly
+ * when the agent enforces SimpleAuth).
  *
- * Returns UI-message-shaped history (`messages`) reshaped from Mastra's
- * stored `format: 2` parts:
+ * List mode returns `{ threads: [{ id, title, createdAt, updatedAt }] }`
+ * ordered by `updatedAt` DESC (null-title threads included; the client renders
+ * a fallback label). Message mode returns UI-message-shaped history
+ * reshaped from Mastra's stored `format: 2` parts:
  *   text            -> { type: "text", text }
  *   reasoning       -> { type: "reasoning", text, state: "done" }
  *   tool-invocation -> { type: `tool-<toolName>`, toolCallId, state:
@@ -15,8 +17,8 @@
  *   step-start / data-om-* / signal messages -> dropped
  *
  * Visitor ids are unguessable UUIDs held in the browser's localStorage;
- * anyone presenting one can read that visitor's thread history (same
- * threat model as any device-local history). Nothing else is exposed.
+ * anyone presenting one can read that visitor's threads (same threat model
+ * as any device-local history). Nothing else is exposed.
  */
 import { NextResponse } from "next/server";
 import { MastraClient } from "@mastra/client-js";
@@ -27,8 +29,23 @@ export const dynamic = "force-dynamic";
 
 const DOCS_AGENT_ID = "docs-agent";
 const MAX_VALUE = 200;
+const MAX_THREAD_ID = 128;
 const MESSAGE_LIMIT = 200;
 const VISITOR_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{3,63}$/;
+const THREAD_ID_PATTERN = /^[^\s]{1,128}$/;
+
+const isHttpStatus = (err: unknown): err is { status: number } =>
+  typeof err === "object" &&
+  err !== null &&
+  "status" in err &&
+  typeof (err as { status: unknown }).status === "number";
+
+const isoOrNull = (v: unknown): string | null => {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return new Date(v).toISOString();
+  if (v instanceof Date) return v.toISOString();
+  return v != null ? String(v) : null;
+};
 
 const json = (body: Record<string, unknown>, status = 200) =>
   NextResponse.json(body, { status, headers: { "cache-control": "no-store" } });
@@ -116,6 +133,10 @@ export async function GET(request: Request) {
     return json({ error: "invalid_visitor_id" }, 400);
   }
 
+  // ?threadId= → message mode for THAT thread (after ownership check);
+  // no threadId  → list mode for this visitor.
+  const threadId = new URL(request.url).searchParams.get("threadId")?.trim();
+
   const internalUrl = process.env.DOCS_AGENT_INTERNAL_URL ?? "http://localhost:4111";
   const token = process.env.DOCS_AGENT_ADMIN_TOKEN;
 
@@ -127,30 +148,58 @@ export async function GET(request: Request) {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
 
-  // Latest thread for this visitor, by updatedAt.
-  let latest:
+  if (!threadId) {
+    let threads: { id: string; title: string | null; createdAt: string | null; updatedAt: string | null }[] = [];
+    try {
+      const list = await mastra.listMemoryThreads({
+        resourceId: visitorId,
+        agentId: DOCS_AGENT_ID,
+        perPage: MAX_VALUE,
+        orderBy: { field: "updatedAt", direction: "DESC" },
+      });
+      threads = (list.threads ?? []).map((t) => ({
+        id: t.id,
+        title:
+          typeof t.title === "string" && t.title.trim()
+            ? (sanitizeMetadataValue(t.title, 256) ?? null)
+            : null,
+        createdAt: isoOrNull(t.createdAt),
+        updatedAt: isoOrNull(t.updatedAt),
+      }));
+    } catch (err) {
+      console.error("[docs-memory] failed to list threads", err);
+      return json({ error: "mastra_unreachable" }, 502);
+    }
+    return json({ threads });
+  }
+
+  if (!THREAD_ID_PATTERN.test(threadId) || threadId.length > MAX_THREAD_ID) {
+    return json({ error: "invalid_thread_id" }, 400);
+  }
+
+  // Ownership check: the thread must belong to this visitor (resourceId).
+  let owned:
     | { id: string; title?: string | null; updatedAt?: unknown; createdAt?: unknown }
     | undefined;
   try {
-    const list = await mastra.listMemoryThreads({
-      resourceId: visitorId,
-      agentId: DOCS_AGENT_ID,
-      perPage: 1,
-      orderBy: { field: "updatedAt", direction: "DESC" },
-    });
-    latest = list.threads?.[0] as typeof latest;
+    const t = await mastra
+      .getMemoryThread({ threadId, agentId: DOCS_AGENT_ID })
+      .get();
+    if (!t || (t as { resourceId?: string }).resourceId !== visitorId) {
+      return json({ error: "thread_not_found" }, 404);
+    }
+    owned = t as NonNullable<typeof owned>;
   } catch (err) {
-    console.error("[docs-memory] failed to list threads", err);
+    if (isHttpStatus(err) && err.status === 404) {
+      return json({ error: "thread_not_found" }, 404);
+    }
+    console.error("[docs-memory] failed to read thread", err);
     return json({ error: "mastra_unreachable" }, 502);
-  }
-
-  if (!latest) {
-    return json({ thread: null, messages: [] });
   }
 
   let rawMessages: unknown[] = [];
   try {
-    const thread = mastra.getMemoryThread({ threadId: latest.id, agentId: DOCS_AGENT_ID });
+    const thread = mastra.getMemoryThread({ threadId: owned.id, agentId: DOCS_AGENT_ID });
     const result = await thread.listMessages({
       page: 0,
       perPage: MESSAGE_LIMIT,
@@ -168,16 +217,16 @@ export async function GET(request: Request) {
 
   return json({
     thread: {
-      id: latest.id,
+      id: owned.id,
       title:
-        typeof latest.title === "string" && latest.title.trim()
-          ? sanitizeMetadataValue(latest.title, 256)
+        typeof owned.title === "string" && owned.title.trim()
+          ? sanitizeMetadataValue(owned.title, 256)
           : null,
       updatedAt:
-        typeof latest.updatedAt === "string"
-          ? latest.updatedAt
-          : latest.updatedAt != null
-            ? String(latest.updatedAt)
+        typeof owned.updatedAt === "string"
+          ? owned.updatedAt
+          : owned.updatedAt != null
+            ? String(owned.updatedAt)
             : null,
     },
     messages,

@@ -39,12 +39,13 @@ How it fits together:
   the server).
 - `app/docs/docs-assistant.tsx` wires `useChatRuntime` (`@assistant-ui/ai-sdk`) to
   an `AssistantChatTransport` pointing at `NEXT_PUBLIC_DOCS_CHAT_URL`.
-- Conversations are **restored after a reload**: the panel reopens the most
-  recent Mastra memory thread for your anonymous visitor (message history is
-  fetched through the same-origin `/api/docs-memory` proxy — Mastra keeps the
-  source of truth) and new messages continue that thread. First-ever visit or
-  no prior thread: a fresh empty chat as before; switching between older
-  conversations is not supported yet.
+- Conversations **do not** auto-restore on reload: every page load starts a
+  fresh thread (as on first visit). Previous conversations for your visitor are
+  listed under **History** (titles from Mastra, grouped by day) — opening one
+  restores it and subsequent replies continue that thread. History is scoped by
+  your anonymous visitor id (`resourceId` = `docs_visitor_id`); threads created
+  before the visitor-id switch live under the shared `docs-visitor` resource and
+  are intentionally not shown.
 
 ### Anonymous visitor attribution
 

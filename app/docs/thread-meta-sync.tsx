@@ -2,10 +2,10 @@
 
 import { useCallback } from "react";
 import { useAuiEvent } from "@assistant-ui/react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
 
-import { buildThreadMetadata } from "@/lib/visitor";
+import { buildThreadMetadata, getOrCreateVisitorId } from "@/lib/visitor";
 import type { ThreadMetadata } from "@/lib/thread-metadata";
 
 /**
@@ -19,6 +19,7 @@ import type { ThreadMetadata } from "@/lib/thread-metadata";
  */
 export function ThreadMetaSync() {
   const pathname = usePathname();
+  const queryClient = useQueryClient();
 
   const mutation = useMutation({
     mutationFn: async ({
@@ -46,9 +47,16 @@ export function ThreadMetaSync() {
 
   const sync = useCallback(
     ({ threadId }: { threadId: string }) => {
+      // Keep the History list fresh after every run.
+      const visitorId = getOrCreateVisitorId();
+      if (visitorId) {
+        queryClient.invalidateQueries({
+          queryKey: ["docs-memory-threads", visitorId],
+        });
+      }
       mutation.mutate({ threadId, metadata: buildThreadMetadata(pathname) });
     },
-    [mutation, pathname],
+    [mutation, pathname, queryClient],
   );
 
   useAuiEvent("thread.runEnd", sync);
