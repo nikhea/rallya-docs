@@ -78,7 +78,7 @@ export const AssistantModal: FC = () => {
             right: "0.75rem",
             bottom: "0.75rem",
             left: "auto",
-            width: "25%",
+            width: "30%",
             transform: "none",
             height: "auto",
           }}
