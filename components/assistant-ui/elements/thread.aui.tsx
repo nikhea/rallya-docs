@@ -237,12 +237,11 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
       <ThreadPrimitive.Viewport
         turnAnchor="top"
         data-slot="aui_thread-viewport"
-        className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
+        className="relative flex flex-1 flex-col overflow-x-hidden overflow-y-auto scroll-smooth [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         <div
           className={cn(
-            "mx-auto flex w-full max-w-(--thread-max-width) flex-1 flex-col px-4 pt-4",
-            isEmpty && "justify-center",
+            "mx-auto flex min-h-full w-full max-w-(--thread-max-width) flex-col px-4 pt-4",
           )}
         >
           <AuiIf condition={isNewChatView}>
@@ -265,17 +264,16 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
 
           <ThreadPrimitive.ViewportFooter
             className={cn(
-              "aui-thread-viewport-footer bg-background flex flex-col gap-4 overflow-visible pb-4 md:pb-6",
-              !isEmpty &&
-                "sticky bottom-0 mt-auto rounded-t-(--composer-radius)",
+              "aui-thread-viewport-footer bg-background sticky bottom-0 mt-auto flex flex-col gap-4 overflow-visible rounded-t-(--composer-radius) pb-4 md:pb-6",
+              isEmpty && "mt-0",
             )}
           >
             <ThreadScrollToBottom />
-            <ThreadFollowupSuggestions />
-            <Composer autoFocus={autoFocus} />
             <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
               <ThreadSuggestions />
             </AuiIf>
+            <ThreadFollowupSuggestions />
+            <Composer autoFocus={autoFocus} />
           </ThreadPrimitive.ViewportFooter>
         </div>
       </ThreadPrimitive.Viewport>
@@ -459,9 +457,12 @@ const ThreadScrollToBottom: FC = () => {
 
 const ThreadWelcome: FC = () => {
   return (
-    <div className="aui-thread-welcome-root mb-6 flex flex-col px-2">
+    <div className="aui-thread-welcome-root mt-auto mb-4 flex flex-col px-2">
       <p className="aui-thread-welcome-message-inner fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-2xl font-medium tracking-tight duration-200">
         Ask about the Rallya docs
+      </p>
+      <p className="aui-thread-welcome-subtext text-muted-foreground fade-in slide-in-from-bottom-1 animate-in fill-mode-both mt-1.5 text-sm duration-200 [animation-delay:75ms]">
+        It reads the docs, then answers.
       </p>
     </div>
   );
@@ -485,7 +486,7 @@ const ThreadSuggestionItem: FC = () => {
                       className="text-muted-foreground/60 group-hover:text-foreground font-mono text-xs transition-colors motion-reduce:transition-none"
                     >
                       {">"}
-                    </span><span className="min-w-0 flex-1 truncate">
+                    </span><span className="min-w-0 flex-1">
                       <SuggestionPrimitive.Title className="aui-thread-welcome-suggestion-text-1 text-foreground" />{" "}
                       <SuggestionPrimitive.Description className="aui-thread-welcome-suggestion-text-2 text-muted-foreground empty:hidden" />
                     </span></SuggestionPrimitive.Trigger>

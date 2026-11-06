@@ -1,6 +1,8 @@
 "use client";
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import { useMemo } from "react";
+
+import { AssistantRuntimeProvider, AuiConfig, Suggestions } from "@assistant-ui/react";
 import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/ai-sdk";
 
 import { AssistantModal } from "@/components/assistant-ui/elements/assistant-modal.aui";
@@ -43,8 +45,22 @@ export function DocsAssistant() {
     }),
   });
 
+  // Created once so the provider doesn't see a new config identity per render.
+  const config = useMemo(
+    () =>
+      AuiConfig({
+        suggestions: Suggestions([
+          "How do I get started?",
+          "How do I create an API key?",
+          "Which SDKs are available?",
+          "How do orders and payments work?",
+        ]),
+      }),
+    [],
+  );
+
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
+    <AssistantRuntimeProvider runtime={runtime} config={config}>
       <AssistantModal />
     </AssistantRuntimeProvider>
   );

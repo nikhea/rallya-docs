@@ -1,6 +1,12 @@
 "use client";
 
-import { BotIcon, ChevronDownIcon, HistoryIcon, PlusIcon } from "lucide-react";
+import {
+  BotIcon,
+  ChevronDownIcon,
+  HistoryIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react";
 
 import {
   type ComponentPropsWithoutRef,
@@ -25,13 +31,12 @@ import {
   ThreadListSearch,
 } from "@/components/assistant-ui/elements/thread-list.aui";
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
-import { type ModalView, useModalSize } from "../utils/modal-size";
+
+type ModalView = "thread" | "list";
 
 export const AssistantModal: FC = () => {
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<ModalView>("thread");
-  const contentRef = useRef<HTMLDivElement>(null);
-  const { size, reset, handleProps } = useModalSize(contentRef);
   const thread = useMemo(() => <Thread />, []);
 
   useAuiEvent("thread.runStart", () => {
@@ -64,21 +69,24 @@ export const AssistantModal: FC = () => {
       </div>
       <PopoverPrimitive.Portal>
         <PopoverPrimitive.Positioner
-          side="top"
-          align="end"
-          sideOffset={16}
           positionMethod="fixed"
-          className="isolate z-50"
+          // Fill the viewport (small inset) instead of anchoring to the
+          // trigger. These styles merge over the floating-ui computed
+          // position/transform, so the panel always covers the screen.
+          style={{
+            top: "0.75rem",
+            right: "0.75rem",
+            bottom: "0.75rem",
+            left: "auto",
+            width: "25%",
+            transform: "none",
+            height: "auto",
+          }}
+          className="isolate z-50 max-md:left-3! max-md:w-full!"
         >
           <PopoverPrimitive.Popup
-            ref={contentRef}
-            style={size ?? undefined}
-            className="group/modal aui-root aui-modal-content bg-popover text-popover-foreground data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-open:slide-in-from-bottom-2 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-closed:slide-out-to-bottom-2 [&[data-open]_.aui-thread-viewport-footer]:animate-in [&[data-open]_.aui-thread-viewport-footer]:fade-in-0 [&[data-open]_.aui-thread-viewport-footer]:slide-in-from-bottom-2 [&[data-open]_.aui-thread-viewport-footer]:fill-mode-backwards [&_.aui-thread-viewport-footer]:bg-popover ring-foreground/10 z-50 flex h-125 max-h-(--available-height) w-100 max-w-[calc(100vw-2rem)] origin-(--transform-origin) flex-col gap-0 overflow-clip overscroll-contain rounded-xl p-0 text-base antialiased shadow-[0_16px_48px_-24px_rgb(0_0_0/0.25)] ring-1 transition-none ease-[cubic-bezier(0.32,0.72,0,1)] outline-none data-closed:duration-200 data-open:duration-300 motion-reduce:animate-none dark:shadow-[0_16px_48px_-24px_rgb(0_0_0/0.6)] [&_.aui-thread-root]:bg-inherit motion-reduce:[&_.aui-thread-viewport-footer]:animate-none [&_[data-slot=aui\_thread-viewport]]:[scrollbar-gutter:stable_both-edges] [&[data-open]_.aui-thread-viewport-footer]:delay-100 [&[data-open]_.aui-thread-viewport-footer]:duration-300 [&[data-open]_.aui-thread-viewport-footer]:ease-[cubic-bezier(0.32,0.72,0,1)]"
+            className="group/modal aui-root aui-modal-content bg-popover text-popover-foreground data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [&[data-open]_.aui-thread-viewport-footer]:animate-in [&[data-open]_.aui-thread-viewport-footer]:fade-in-0 [&[data-open]_.aui-thread-viewport-footer]:slide-in-from-bottom-2 [&[data-open]_.aui-thread-viewport-footer]:fill-mode-backwards [&_.aui-thread-viewport-footer]:bg-popover ring-foreground/10 z-50 flex h-full w-full flex-col gap-0 overflow-clip overscroll-contain rounded-xl p-0 text-base antialiased shadow-[0_16px_48px_-24px_rgb(0_0_0/0.25)] ring-1 transition-none ease-[cubic-bezier(0.32,0.72,0,1)] outline-none data-closed:duration-200 data-open:duration-300 motion-reduce:animate-none dark:shadow-[0_16px_48px_-24px_rgb(0_0_0/0.6)] [&_.aui-thread-root]:bg-inherit motion-reduce:[&_.aui-thread-viewport-footer]:animate-none [&[data-open]_.aui-thread-viewport-footer]:delay-100 [&[data-open]_.aui-thread-viewport-footer]:duration-300 [&[data-open]_.aui-thread-viewport-footer]:ease-[cubic-bezier(0.32,0.72,0,1)]"
           >
-            <AssistantModalResizeHandle
-              {...handleProps}
-              onDoubleClick={reset}
-            />
             <AssistantModalHeader view={view} onViewChange={setView} />
             <div className="aui-modal-body relative min-h-0 flex-1">
               <div
@@ -154,6 +162,17 @@ const AssistantModalHeader: FC<{
         >
           <PlusIcon className="size-3.5" />
         </ThreadListPrimitive.New>
+        <PopoverPrimitive.Close
+          render={
+            <TooltipIconButton
+              tooltip="Close"
+              side="bottom"
+              className="aui-modal-close text-muted-foreground hover:text-foreground size-7 rounded-md p-0"
+            />
+          }
+        >
+          <XIcon className="size-4" />
+        </PopoverPrimitive.Close>
       </div>
     </div>
   );
@@ -180,19 +199,6 @@ const AssistantModalThreadList: FC<{ onSelect: () => void }> = ({
       )}
       <ThreadListItems searchQuery={hasThreads ? search : ""} />
     </ThreadListRoot>
-  );
-};
-
-const AssistantModalResizeHandle: FC<ComponentPropsWithoutRef<"button">> = (
-  props,
-) => {
-  return (
-    <button
-      type="button"
-      aria-label="Resize Assistant"
-      className="aui-modal-resize-handle group-hover/modal:border-foreground/15 hover:border-foreground/40 focus-visible:border-ring absolute start-0 top-0 z-10 size-6 cursor-nwse-resize touch-none rounded-ss-xl border-s-2 border-t-2 border-transparent transition-colors outline-none [clip-path:polygon(0_0,100%_0,100%_6px,6px_6px,6px_100%,0_100%)] motion-reduce:transition-none rtl:cursor-nesw-resize rtl:[clip-path:polygon(0_0,100%_0,100%_100%,calc(100%_-_6px)_100%,calc(100%_-_6px)_6px,0_6px)]"
-      {...props}
-    />
   );
 };
 
