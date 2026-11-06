@@ -39,7 +39,6 @@ export function sanitizeMetadataValue(
 ): string | undefined {
   if (typeof value !== "string") return undefined;
   const cleaned = value
-    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1F\x7F]/g, " ")
     .trim();
   if (!cleaned) return undefined;
