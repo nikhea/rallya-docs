@@ -23,6 +23,8 @@ type MarkdownTextProps = Partial<TextMessagePartProps> & {
   componentsByLanguage?: MarkdownTextPrimitiveProps["componentsByLanguage"];
 };
 
+/* eslint-disable react-hooks/refs -- vendored from the assistant-ui registry;
+   reading refs during render is the upstream pattern for shallow-stable props */
 const useShallowStable = <T extends Record<string, unknown> | undefined>(
   value: T,
 ): T => {
@@ -38,6 +40,7 @@ const useShallowStable = <T extends Record<string, unknown> | undefined>(
   }
   return ref.current;
 };
+/* eslint-enable react-hooks/refs */
 
 const MarkdownTextImpl: FC<MarkdownTextProps> = ({
   components,
