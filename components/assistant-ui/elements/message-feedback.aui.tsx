@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FC } from "react";
+import { useEffect, useState, type FC } from "react";
 import { useAui } from "@assistant-ui/react";
 
 import { FeedbackDialog } from "@/components/assistant-ui/elements/feedback-dialog";
@@ -33,6 +33,14 @@ export const MessageFeedbackPanel: FC<{ onClose: () => void }> = ({
         ? current.filter((item) => item !== reason)
         : [...current, reason],
     );
+
+  // Close the card shortly after a successful send; the 👎 button stays
+  // filled via the message's submittedFeedback metadata.
+  useEffect(() => {
+    if (!sent) return;
+    const id = window.setTimeout(onClose, 1500);
+    return () => window.clearTimeout(id);
+  }, [sent, onClose]);
 
   const submit = () => {
     const comment = [...selected, note.trim()]

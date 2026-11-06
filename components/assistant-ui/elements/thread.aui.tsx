@@ -58,7 +58,6 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   PhoneIcon,
-  RefreshCwIcon,
   SquareIcon,
   PlayIcon,
   ThumbsDownIcon,
@@ -719,7 +718,6 @@ const AssistantActionBar: FC<{ onNegativeFeedbackToggle: () => void }> = ({
           <ThumbsDownIcon />
         </TooltipIconButton>
       </AuiIf>
-      <ActionBarPrimitive.Reload render={<TooltipIconButton tooltip="Refresh" />}><RefreshCwIcon /></ActionBarPrimitive.Reload>
       <ActionBarMorePrimitive.Root>
         <ActionBarMorePrimitive.Trigger render={<TooltipIconButton tooltip="More" className="data-[state=open]:bg-accent" />}><MoreHorizontalIcon /></ActionBarMorePrimitive.Trigger>
         <ActionBarMorePrimitive.Content
