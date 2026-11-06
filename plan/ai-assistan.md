@@ -13,7 +13,7 @@ Add an "Ask AI" assistant to the Rallya documentation site (`rallya-docs`, Next.
 | --- | --- |
 | Backend endpoint | Existing public, unauthenticated `POST http://localhost:4111/docs-chat` (not `/chat/docs-agent`) |
 | UI surface | Floating "Ask AI" button + panel on every `/docs` page (assistant-ui `assistant-modal` element) |
-| Conversation persistence | Fresh session every visit (new `thread` + `resource` UUIDs per mount) |
+| Conversation persistence | Fresh thread every visit; static shared `resource` id from env (`NEXT_PUBLIC_DOCS_RESOURCE_ID`) |
 | Styling | assistant-ui CLI-copied elements, adapted to the fumadocs palette via a CSS token bridge |
 | Protocol | AI SDK v7 UI-message SSE, consumed directly by `useChatRuntime` + `AssistantChatTransport` |
 
@@ -59,6 +59,15 @@ Out of scope (future): thread list / history UI (`useRemoteThreadListRuntime` + 
 - Confirm the docs site builds/devs cleanly on `:3000` before adding anything.
 - Deliverable: notes in this file if anything differs from the verified contract.
 
+### Phase 1 verification (2026-11-06)
+
+- Next 16 `use client` doc read: client components may be nested inside Server Components; props must be serializable (`<DocsAssistant />` takes none); no config change required.
+- Docs site does not run on `:3000` yet (nothing listening); will boot for Phase 6 verification.
+- `POST /docs-chat` with `memory: { thread: "phase1-verify-<ts>", resource: "docs-visitor" }` → v7 stream opened with `traceId` (see 2026-11-06 probe). Throwaway thread deleted afterwards (`DELETE /api/memory/threads/<id>?agentId=docs-agent` → `200`).
+- Missing-`memory` failure mode and CORS preflight (`POST` + `Content-Type`, `access-control-allow-origin: *`) re-confirmed on 2026-11-06.
+- Backend needs **no** modifications for this feature.
+- `.env.example` + `.env.local` now carry `NEXT_PUBLIC_DOCS_CHAT_URL` and `NEXT_PUBLIC_DOCS_RESOURCE_ID` (`docs-visitor`).
+
 ## Phase 2 — Scaffolding & dependencies
 
 - Add a minimal `components.json` (Tailwind v4, aliases `@/components`, `@/lib/utils`, Base UI flavor as the CLI default) so `assistant-ui add` resolves paths.
@@ -87,7 +96,7 @@ Out of scope (future): thread list / history UI (`useRemoteThreadListRuntime` + 
 ## Phase 5 — `DocsAssistant` client component
 
 - New file `app/docs/docs-assistant.tsx`, `"use client"`.
-- Generate `threadId` and `resourceId` once per mount: `useState(() => crypto.randomUUID())` (fresh session every visit — per this plan).
+- Generate `threadId` once per mount: `useState(() => crypto.randomUUID())` (fresh thread every visit). `resourceId` comes from `process.env.NEXT_PUBLIC_DOCS_RESOURCE_ID` (static, shared, e.g. `docs-visitor`) — set in both `.env.local` and `.env.example`.
 - `useChatRuntime({ transport: new AssistantChatTransport({ api: process.env.NEXT_PUBLIC_DOCS_CHAT_URL ?? "http://localhost:4111/docs-chat", prepareSendMessagesRequest }) })`
   - `prepareSendMessagesRequest`: return a body mirroring the default (`...options.body`, `id`, `messages`, `trigger`, `messageId`, `metadata`) **plus** `memory: { thread: threadId, resource: resourceId }`. Omitting `messages` breaks the stream ("Messages must be an array of UIMessage objects").
   - `fetch`: default is fine (no credentials).
