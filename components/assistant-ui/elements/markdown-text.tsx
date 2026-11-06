@@ -15,6 +15,8 @@ import type { TextMessagePartProps } from "@assistant-ui/react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
+import { SyntaxHighlighter } from "@/components/assistant-ui/elements/shiki-highlighter.aui";
+import { MermaidDiagram } from "@/components/assistant-ui/elements/mermaid-diagram.aui";
 import { useCopyToClipboard } from "@/hooks/use-copy-to-clipboard";
 import { cn } from "@/lib/utils";
 
@@ -55,13 +57,21 @@ const MarkdownTextImpl: FC<MarkdownTextProps> = ({
       ...memoizeMarkdownComponents(stableComponents),
     };
   }, [stableComponents]);
+  // Fenced ```mermaid blocks render as diagrams; caller overrides win.
+  const mergedComponentsByLanguage = useMemo(
+    () => ({
+      mermaid: { SyntaxHighlighter: MermaidDiagram },
+      ...stableComponentsByLanguage,
+    }),
+    [stableComponentsByLanguage],
+  );
 
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
       className="aui-md"
       components={markdownComponents}
-      componentsByLanguage={stableComponentsByLanguage}
+      componentsByLanguage={mergedComponentsByLanguage}
       defer
     />
   );
@@ -94,6 +104,8 @@ const CodeHeader: FC<CodeHeaderProps> = ({ language, code }) => {
 };
 
 const defaultComponents = memoizeMarkdownComponents({
+  // Fenced code blocks highlight with Shiki; skipped while streaming.
+  SyntaxHighlighter,
   h1: ({ className, ...props }) => (
     <h1
       className={cn(
