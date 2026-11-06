@@ -91,6 +91,26 @@ Clearing site storage resets the anonymous identity. Data lives only on the
 thread row in Postgres; inspect it via Studio or `listMemoryThreads({
 resourceId })` per visitor.
 
+### Feedback on answers
+
+Every assistant reply has thumbs up/down actions (they reveal on the last
+reply / on hover). 👍 sends immediately; 👎 opens an inline panel with reason
+pills and a comment box (the comment is joined from the pills + note and capped
+at 1000 chars). Both are recorded in Mastra observability as a `thumbs`
+feedback record (`value` ±1) anchored to the message's `traceId` — the same
+trace the run reports — with `feedbackSource: "user"`, `entityId:
+"docs-agent"`, and `feedbackUserId` set to the anonymous visitor id.
+
+The browser never calls Mastra's observability API directly: a same-origin
+Route Handler (`/api/docs-feedback`) validates the traceId, confirms the trace
+belongs to `docs-agent`, then writes via `mastraClient.createFeedback` with a
+server-only `DOCS_AGENT_ADMIN_TOKEN` (the same token as the visitor-meta
+route). A direct browser → Mastra call would 401 when SimpleAuth is on; the
+proxy keeps the token private. The send is fire-and-forget (React Query
+`useMutation`, retry 1): failures log a warning and chat is unaffected.
+Feedback shows up in Studio (trace → Feedback) and via
+`GET /api/observability/feedback?traceId=…`.
+
 The Mastra server does **not** need code changes, but its CORS must allow the
 docs origin. Dev defaults to `*` via `DOCS_CHAT_CORS_ORIGINS`; set it to the
 docs origin in production (e.g. `DOCS_CHAT_CORS_ORIGINS=https://<docs-domain>`).
