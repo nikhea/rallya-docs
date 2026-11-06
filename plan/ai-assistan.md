@@ -42,7 +42,7 @@ Out of scope (future): thread list / history UI (`useRemoteThreadListRuntime` + 
 
 ## Known trade-off
 
-"Fresh session every visit" means one Postgres thread row per page load on the Mastra side. One-line change later: scope the thread id to `sessionStorage` (one thread per tab session) instead of per mount. Implemented as specified for now.
+"Fresh session every visit" means one Postgres thread row per runtime thread (page load, or "New Thread" in the modal) on the Mastra side. One-line change later: scope the thread id to `sessionStorage` (one thread per tab session) instead of per mount. Implemented as specified for now.
 
 ## Environment
 
@@ -96,7 +96,8 @@ Out of scope (future): thread list / history UI (`useRemoteThreadListRuntime` + 
 ## Phase 5 — `DocsAssistant` client component
 
 - New file `app/docs/docs-assistant.tsx`, `"use client"`.
-- Generate `threadId` once per mount: `useState(() => crypto.randomUUID())` (fresh thread every visit). `resourceId` comes from `process.env.NEXT_PUBLIC_DOCS_RESOURCE_ID` (static, shared, e.g. `docs-visitor`) — set in both `.env.local` and `.env.example`.
+- Threading: the runtime owns an in-memory thread list, so `memory.thread` is the runtime thread id (`options.id` in `prepareSendMessagesRequest`). Every page load starts a fresh thread (fresh session every visit); the modal's "New Thread" likewise creates a fresh Mastra memory thread.
+- `resourceId` comes from `process.env.NEXT_PUBLIC_DOCS_RESOURCE_ID` (static, shared, e.g. `docs-visitor`) — set in both `.env.local` and `.env.example`.
 - `useChatRuntime({ transport: new AssistantChatTransport({ api: process.env.NEXT_PUBLIC_DOCS_CHAT_URL ?? "http://localhost:4111/docs-chat", prepareSendMessagesRequest }) })`
   - `prepareSendMessagesRequest`: return a body mirroring the default (`...options.body`, `id`, `messages`, `trigger`, `messageId`, `metadata`) **plus** `memory: { thread: threadId, resource: resourceId }`. Omitting `messages` breaks the stream ("Messages must be an array of UIMessage objects").
   - `fetch`: default is fine (no credentials).
