@@ -36,35 +36,39 @@ export type AssistantModalProps = {
   onSelectThread: (id: string) => void;
   /** Currently open conversation's Mastra thread id, if any. */
   activeThreadId?: string | undefined;
+  /** Panel open state, lifted above the thread remount so switches keep it open. */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 };
 
 export const AssistantModal: FC<AssistantModalProps> = ({
   onNewThread,
   onSelectThread,
   activeThreadId,
+  open,
+  onOpenChange,
 }) => {
-  const [open, setOpen] = useState(false);
   const [view, setView] = useState<ModalView>("thread");
   const thread = useMemo(() => <Thread />, []);
 
   useAuiEvent("thread.runStart", () => {
     setView("thread");
-    setOpen(true);
+    onOpenChange(true);
   });
 
   return (
     <PopoverPrimitive.Root
       open={open}
-      onOpenChange={(open, eventDetails) => {
+      onOpenChange={(nextOpen, eventDetails) => {
         if (
-          !open &&
+          !nextOpen &&
           (eventDetails.reason === "outside-press" ||
             eventDetails.reason === "focus-out")
         ) {
           eventDetails.cancel();
         } else {
-          if (open) setView("thread");
-          setOpen(open);
+          if (nextOpen) setView("thread");
+          onOpenChange(nextOpen);
         }
       }}
     >

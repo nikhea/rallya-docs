@@ -60,6 +60,8 @@ export function DocsAssistant() {
 
   const selectThread = useCallback((id: string) => setActiveThreadId(id), []);
   const newThread = useCallback(() => setActiveThreadId(undefined), []);
+  // Lifted above the thread remount so opening a conversation keeps the panel open.
+  const [panelOpen, setPanelOpen] = useState(false);
 
   const { data: selected, isLoading, isError } = useQuery({
     queryKey: ["docs-memory-thread", visitorId, activeThreadId],
@@ -73,7 +75,18 @@ export function DocsAssistant() {
   // fall back to a fresh chat instead of blocking.
   if (activeThreadId !== undefined) {
     if (isLoading) return null;
-    if (isError) return <ChatSurface key="new" visitorId={visitorId} onSelectThread={selectThread} onNewThread={newThread} />;
+    if (isError) {
+      return (
+        <ChatSurface
+          key="new"
+          visitorId={visitorId}
+          onSelectThread={selectThread}
+          onNewThread={newThread}
+          panelOpen={panelOpen}
+          onPanelOpenChange={setPanelOpen}
+        />
+      );
+    }
   }
 
   return (
@@ -84,6 +97,8 @@ export function DocsAssistant() {
       activeThreadId={activeThreadId}
       onSelectThread={selectThread}
       onNewThread={newThread}
+      panelOpen={panelOpen}
+      onPanelOpenChange={setPanelOpen}
     />
   );
 }
@@ -94,7 +109,17 @@ const ChatSurface: React.FC<{
   activeThreadId?: string | undefined;
   onSelectThread: (id: string) => void;
   onNewThread: () => void;
-}> = ({ visitorId, snapshot, activeThreadId, onSelectThread, onNewThread }) => {
+  panelOpen: boolean;
+  onPanelOpenChange: (open: boolean) => void;
+}> = ({
+  visitorId,
+  snapshot,
+  activeThreadId,
+  onSelectThread,
+  onNewThread,
+  panelOpen,
+  onPanelOpenChange,
+}) => {
   // Thumbs feedback on any reply posts to the same-origin /api/docs-feedback
   // proxy (server-held Mastra token). Fire-and-forget via React Query: never
   // blocks or crashes the chat.
@@ -194,6 +219,8 @@ const ChatSurface: React.FC<{
         onNewThread={onNewThread}
         onSelectThread={onSelectThread}
         activeThreadId={activeThreadId ?? snapshot?.thread?.id}
+        open={panelOpen}
+        onOpenChange={onPanelOpenChange}
       />
     </AssistantRuntimeProvider>
   );
