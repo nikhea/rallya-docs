@@ -116,12 +116,21 @@ custom public routes; CORS changes; per-visitor analytics dashboards/rollups; fe
 - `bun.lock` is the committed JS lockfile (project uses bun); `package-lock.json` is stale
   and left untouched pending maintainer decision.
 
-## Verification (filled in by subtask 10)
+## Verification (2026-11-06)
 
-- [ ] `npx tsc --noEmit` clean
-- [ ] `npm run lint` clean
-- [ ] Dev E2E: question asked; thread metadata shows all fields incl. `ip`; resource = visitorId
-- [ ] Second message: `firstSeenAt` preserved, `lastSeenAt` bumped, no metadata clobber
-- [ ] New tab: same visitorId, new sessionId
-- [ ] Agent with SimpleAuth tokens set: proxy succeeds, direct browser → `/api/memory/*` gets 401
-- [ ] Failure drill: agent stopped → chat still streams, warning logged, no crash
+- [x] `npx tsc --noEmit` clean
+- [x] `npm run lint` — 0 errors (9 pre-existing warnings in vendored assistant-ui elements; none in new files)
+- [x] Dev E2E against `:3000` + agent: question asked via `POST /docs-chat`; thread created with `resourceId` = visitor id; metadata shows all fields incl. `ip` after sync
+- [x] Second sync: `firstSeenAt` preserved, `lastSeenAt` bumped, unrelated keys (e.g. `utmMedium`) retained; `page`/`utmSource`/`referrer` update last-write-wins
+- [x] Client-spoofed server-owned keys (`ip`, `firstSeenAt`, `firstReferrer`) stripped; server values applied (`firstReferrer` from client `referrer` preserved on write 1)
+- [x] Mastra-internal metadata (`mastra.stateSignals`) preserved verbatim through the read-merge-write
+- [x] Validation: invalid JSON → 400; missing/invalid `threadId` → 400; unknown thread → 404 `thread_not_found`; agent down → 502 `mastra_unreachable` (chat unaffected; sync is fire-and-forget)
+- [x] Failure drill executed with agent stopped; nothing renders/crashes client-side
+- [~] Agent with SimpleAuth tokens set: **not exercised** (dev agent runs auth-free by design). Proxy path sends `Authorization: Bearer $DOCS_AGENT_ADMIN_TOKEN` when set; fail-closed verified by code inspection (`/api/memory/*` → 401 → terminal error → 502), not by a live SimpleAuth run
+- [x] Verification thread deleted from Postgres afterwards
+
+Notes: anonymous-visitor flow was verified browser-less (curl) against the real
+stack; the client-side `thread.runEnd` wiring is typechecked and lint-clean but
+not yet click-tested in a browser — do one pass through the Ask AI panel when
+convenient (open modal → ask → confirm request to `/api/docs-visitor-meta`
+fires on run end and the thread metadata appears in Studio).
