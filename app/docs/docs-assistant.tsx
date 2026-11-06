@@ -57,9 +57,15 @@ export function DocsAssistant() {
   // undefined → fresh chat on every page load (asked for); set → continue the
   // selected previous thread (seeded from Mastra).
   const [activeThreadId, setActiveThreadId] = useState<string | undefined>(undefined);
+  // Bumped on every "New Thread" so the runtime always remounts, even when
+  // activeThreadId is already undefined (fresh thread → reply → + again).
+  const [session, setSession] = useState(0);
 
   const selectThread = useCallback((id: string) => setActiveThreadId(id), []);
-  const newThread = useCallback(() => setActiveThreadId(undefined), []);
+  const newThread = useCallback(() => {
+    setActiveThreadId(undefined);
+    setSession((n) => n + 1);
+  }, []);
   // Lifted above the thread remount so opening a conversation keeps the panel open.
   const [panelOpen, setPanelOpen] = useState(false);
 
@@ -78,7 +84,7 @@ export function DocsAssistant() {
     if (isError) {
       return (
         <ChatSurface
-          key="new"
+          key={`new:${session}`}
           visitorId={visitorId}
           onSelectThread={selectThread}
           onNewThread={newThread}
@@ -91,7 +97,7 @@ export function DocsAssistant() {
 
   return (
     <ChatSurface
-      key={activeThreadId ?? "new"}
+      key={`${activeThreadId ?? "new"}:${session}`}
       visitorId={visitorId}
       snapshot={selected}
       activeThreadId={activeThreadId}
