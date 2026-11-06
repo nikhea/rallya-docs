@@ -1,6 +1,6 @@
 # AI Assistant for the Rallya Docs Site
 
-Status: planned, not started. Do not implement until this plan is approved.
+Status: implemented and verified (Phases 1–8), committed per phase on `feat/docs-ai-assistant`. See Phase 8 for production notes.
 Branch: `feat/docs-ai-assistant`
 
 ## Goal
@@ -133,6 +133,13 @@ Out of scope (future): thread list / history UI (`useRemoteThreadListRuntime` + 
 - Note that Mastra runs separately on `:4111`; the docs deploy must point `NEXT_PUBLIC_DOCS_CHAT_URL` at the deployed agent (e.g. `https://<agent-host>/docs-chat`).
 - Deferred items list (thread history, feedback via `traceId`, anonymous thread cleanup, per-page context).
 - Deliverable: updated docs + PR ready to review; no implementation in this phase beyond notes.
+
+### Phase 8 done (2026-11-06)
+
+- `README.md` gained an "Ask AI assistant" section: architecture (browser → public `POST /docs-chat`), env var table, CORS requirement (`DOCS_CHAT_CORS_ORIGINS`, defaults to `*` in dev), fresh-session threading model, and the thread-growth trade-off with the `sessionStorage` alternative.
+- `.env.example` documents both `NEXT_PUBLIC_DOCS_CHAT_URL` and `NEXT_PUBLIC_DOCS_RESOURCE_ID` with a production pointer.
+- Verified on branch: typecheck, lint (0 errors), headless-Chrome E2E against the live agent (`/docs-chat` 200, correct cited answer, fresh session after reload, no CORS/page errors). All Phase 1–8 criteria met.
+- None of the deferred items (thread history, feedback, anonymous thread cleanup, per-page context) were started.
 
 ## Rollback
 

@@ -23,6 +23,43 @@ Open [http://localhost:3000](http://localhost:3000) — `/` redirects to `/docs`
 | `npm run lint`            | Run ESLint                                     |
 | `npm run migrate:docs`    | One-time import of `content/docs` into Sanity  |
 
+## Ask AI assistant
+
+Every `/docs` page shows a floating **Ask AI** button (bottom-right) that opens a
+chat panel backed by the [Rallya docs agent](https://github.com/nikhea/rallya)
+(Mastra, `docs-agent`). Answers are grounded in the official docs and include
+citations; the underlying tool calls (`knowledge_search` / `knowledge_read`) are
+visible in the panel.
+
+How it fits together:
+
+- The browser calls the agent's **public, unauthenticated** endpoint directly —
+  `POST /docs-chat` (AI SDK v7 UI-message SSE). No Next.js API route, and the
+  agent must be reachable from the browser (not just from the server).
+- `app/docs/docs-assistant.tsx` wires `useChatRuntime` (`@assistant-ui/ai-sdk`) to
+  an `AssistantChatTransport` pointing at `NEXT_PUBLIC_DOCS_CHAT_URL`.
+- Conversations are **not persisted across reloads**: each page load starts a
+  fresh runtime thread; `memory.thread` sent to Mastra is that thread id, and
+  `memory.resource` is the static value of `NEXT_PUBLIC_DOCS_RESOURCE_ID`
+  (`docs-visitor`). One anonymous Postgres thread row is created per runtime
+  thread — see "Thread growth" below.
+
+Environment variables (`.env.local` for dev, deploy env for prod):
+
+| Var | Dev default | Notes |
+| --- | --- | --- |
+| `NEXT_PUBLIC_DOCS_CHAT_URL` | `http://localhost:4111/docs-chat` | Mastra agent runs separately on `:4111`. In prod point at the deployed agent origin, e.g. `https://<agent-host>/docs-chat`. |
+| `NEXT_PUBLIC_DOCS_RESOURCE_ID` | `docs-visitor` | Static resource id reported to Mastra Memory; shared by all anonymous visitors by design. |
+
+The Mastra server does **not** need code changes, but its CORS must allow the
+docs origin. Dev defaults to `*` via `DOCS_CHAT_CORS_ORIGINS`; set it to the
+docs origin in production (e.g. `DOCS_CHAT_CORS_ORIGINS=https://<docs-domain>`).
+
+Thread growth: Mastra Memory stores one thread per runtime thread the browser
+creates, with no anonymous-thread cleanup. If that becomes a concern, scope the
+thread id to `sessionStorage` (one thread per tab session) in
+`docs-assistant.tsx`, or add a retention job on the agent side.
+
 ## Content management
 
 Content lives in Sanity (project **Rallya Docs**, org **rallya**, dataset
@@ -47,6 +84,9 @@ and `body` (MDX source). `docSection` has `title`, `icon`, and `order`.
 
 ## Features
 
+- **Ask AI assistant** — floating chat on every `/docs` page, answered by the
+  Rallya docs agent (Mastra) with citations from the docs corpus. See
+  [Ask AI assistant](#ask-ai-assistant).
 - **Search** — `app/api/search/route.ts` (`createFromSource`), queried by the
   docs layout's search dialog.
 - **Copy page menu** — `components/page-actions.tsx` on every docs page: copy
