@@ -5,7 +5,8 @@ import { useMemo } from "react";
 import { AssistantRuntimeProvider, AuiConfig, Suggestions } from "@assistant-ui/react";
 import type { FeedbackAdapter } from "@assistant-ui/core";
 import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/ai-sdk";
-import { useMutation } from "@tanstack/react-query";
+import type { UIMessage } from "ai";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { AssistantModal } from "@/components/assistant-ui/elements/assistant-modal.aui";
 import { ThreadMetaSync } from "@/app/docs/thread-meta-sync";
@@ -13,6 +14,11 @@ import { getOrCreateVisitorId } from "@/lib/visitor";
 
 const DOCS_CHAT_URL =
   process.env.NEXT_PUBLIC_DOCS_CHAT_URL ?? "http://localhost:4111/docs-chat";
+
+type AssistantMessageSnapshot = {
+  thread: { id: string; title: string | null; updatedAt: string | null } | null;
+  messages: UIMessage[];
+};
 
 /**
  * The `traceId` for a message, read defensively: assistant-ui moves unknown
@@ -33,18 +39,39 @@ const getTraceId = (message: AdapterMessage): string | undefined => {
   return typeof candidate === "string" && candidate ? candidate : undefined;
 };
 
-/**
- * Floating "Ask AI" assistant for the docs. Talks directly to the Mastra
- * docs agent's public, unauthenticated `POST /docs-chat` route (AI SDK v7
- * UI-message SSE).
- *
- * Threading: `useChatRuntime` owns an in-memory thread list, so every page
- * load starts with a fresh runtime thread and `memory.thread` below is a new
- * id per visit — nothing is persisted across reloads. `memory.resource` is the
- * anonymous visitor id from localStorage, so an anonymous browser's threads
- * group together under one Mastra resource (see plan/anony_vistor.md).
- */
+const fetchLatestConversation = async (): Promise<AssistantMessageSnapshot> => {
+  const visitorId = getOrCreateVisitorId();
+  if (!visitorId) return { thread: null, messages: [] };
+  const res = await fetch(
+    `/api/docs-memory?visitorId=${encodeURIComponent(visitorId)}`,
+    { cache: "no-store" },
+  );
+  if (!res.ok) throw new Error(`docs-memory responded ${res.status}`);
+  return (await res.json()) as AssistantMessageSnapshot;
+};
+
 export function DocsAssistant() {
+  const visitorId =
+    typeof window !== "undefined" ? getOrCreateVisitorId() : "";
+  const { data, isLoading } = useQuery({
+    queryKey: ["docs-memory-latest", visitorId],
+    queryFn: fetchLatestConversation,
+    enabled: visitorId.length > 0,
+    // Fetch once per page load; the chat runtime owns the data afterwards.
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: 1,
+  });
+
+  // Brief empty first paint while the latest conversation is restored; on
+  // error the panel simply starts a fresh thread instead of failing.
+  if (visitorId.length > 0 && isLoading && data === undefined) return null;
+
+  return <ChatSurface key={data?.thread?.id ?? "new"} snapshot={data} />;
+}
+
+const ChatSurface: React.FC<{ snapshot?: AssistantMessageSnapshot | undefined }> = ({
+  snapshot,
+}) => {
   // Thumbs feedback on any reply posts to the same-origin /api/docs-feedback
   // proxy (server-held Mastra token). Fire-and-forget via React Query: never
   // blocks or crashes the chat.
@@ -91,6 +118,11 @@ export function DocsAssistant() {
   );
 
   const runtime = useChatRuntime({
+    // Seeded thread: keep the same Mastra thread id so new messages continue
+    // the restored conversation. Unset: the SDK generates one and Mastra
+    // creates the thread lazily on the first message.
+    ...(snapshot?.thread?.id ? { id: snapshot.thread.id } : {}),
+    ...(snapshot?.messages?.length ? { messages: snapshot.messages } : {}),
     adapters: { feedback: feedbackAdapter },
     transport: new AssistantChatTransport({
       api: DOCS_CHAT_URL,
@@ -138,4 +170,4 @@ export function DocsAssistant() {
       <AssistantModal />
     </AssistantRuntimeProvider>
   );
-}
+};

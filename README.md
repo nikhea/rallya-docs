@@ -39,11 +39,12 @@ How it fits together:
   the server).
 - `app/docs/docs-assistant.tsx` wires `useChatRuntime` (`@assistant-ui/ai-sdk`) to
   an `AssistantChatTransport` pointing at `NEXT_PUBLIC_DOCS_CHAT_URL`.
-- Conversations are **not persisted across reloads**: each page load starts a
-  fresh runtime thread; `memory.thread` sent to Mastra is that thread id, and
-  `memory.resource` is the anonymous visitor id from localStorage
-  (`docs_visitor_id`), so one browser's threads group together — see
-  "Anonymous visitor attribution" below.
+- Conversations are **restored after a reload**: the panel reopens the most
+  recent Mastra memory thread for your anonymous visitor (message history is
+  fetched through the same-origin `/api/docs-memory` proxy — Mastra keeps the
+  source of truth) and new messages continue that thread. First-ever visit or
+  no prior thread: a fresh empty chat as before; switching between older
+  conversations is not supported yet.
 
 ### Anonymous visitor attribution
 
@@ -70,7 +71,8 @@ Route Handler validates and sanitizes the payload (allowlisted keys, scalars
 only, length caps), attaches the visitor IP, then upserts the merged metadata
 onto the thread via Mastra's memory API (`/api/memory/threads/:id`) using a
 **server-only** admin token. It never blocks chat: failures are retried, then
-logged and dropped.
+logged and dropped. Thread restore after a reload (`/api/docs-memory`) uses
+the same same-origin proxy pattern and server-held token.
 
 The Mastra server needs **no code changes** for this. Because `/api/*` is
 token-protected when the agent has SimpleAuth configured, the browser cannot
