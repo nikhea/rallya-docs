@@ -6,12 +6,11 @@ import { AssistantRuntimeProvider, AuiConfig, Suggestions } from "@assistant-ui/
 import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/ai-sdk";
 
 import { AssistantModal } from "@/components/assistant-ui/elements/assistant-modal.aui";
+import { ThreadMetaSync } from "@/app/docs/thread-meta-sync";
+import { getOrCreateVisitorId } from "@/lib/visitor";
 
 const DOCS_CHAT_URL =
   process.env.NEXT_PUBLIC_DOCS_CHAT_URL ?? "http://localhost:4111/docs-chat";
-// Static resource id the anonymous docs assistant reports to Mastra Memory.
-// Shared across visitors on purpose (see plan/ai-assistan.md).
-const RESOURCE_ID = process.env.NEXT_PUBLIC_DOCS_RESOURCE_ID ?? "docs-visitor";
 
 /**
  * Floating "Ask AI" assistant for the docs. Talks directly to the Mastra
@@ -20,8 +19,9 @@ const RESOURCE_ID = process.env.NEXT_PUBLIC_DOCS_RESOURCE_ID ?? "docs-visitor";
  *
  * Threading: `useChatRuntime` owns an in-memory thread list, so every page
  * load starts with a fresh runtime thread and `memory.thread` below is a new
- * id per visit — nothing is persisted across reloads. The shared
- * `memory.resource` partitions the (anonymous) usage in Mastra Memory.
+ * id per visit — nothing is persisted across reloads. `memory.resource` is the
+ * anonymous visitor id from localStorage, so an anonymous browser's threads
+ * group together under one Mastra resource (see plan/anony_vistor.md).
  */
 export function DocsAssistant() {
   const runtime = useChatRuntime({
@@ -39,7 +39,13 @@ export function DocsAssistant() {
           trigger: options.trigger,
           messageId: options.messageId,
           metadata: options.requestMetadata,
-          memory: { thread: options.id, resource: RESOURCE_ID },
+          memory: {
+            thread: options.id,
+            // Long-lived anonymous id from localStorage; groups this visitor's
+            // threads under one Mastra resource. Falls back to the legacy
+            // shared id if storage is unavailable.
+            resource: getOrCreateVisitorId() || "docs-visitor",
+          },
         },
       }),
     }),
@@ -61,6 +67,7 @@ export function DocsAssistant() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime} config={config}>
+      <ThreadMetaSync />
       <AssistantModal />
     </AssistantRuntimeProvider>
   );
