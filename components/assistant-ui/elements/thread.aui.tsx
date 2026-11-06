@@ -17,6 +17,7 @@ import {
   ReasoningTrigger,
 } from "@/components/assistant-ui/elements/reasoning.aui";
 import { ToolFallback } from "@/components/assistant-ui/elements/tool-fallback.aui";
+import { MessageFeedbackPanel } from "@/components/assistant-ui/elements/message-feedback.aui";
 import {
   ToolGroupContent,
   ToolGroupRoot,
@@ -582,6 +583,7 @@ const AssistantMessage: FC = () => {
     TaskGroup: TaskGroupComponent,
   } = useContext(ThreadComponentsContext);
   const groupBy = TaskGroupComponent ? taskAwareGroupBy : messageGroupBy;
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   const ACTION_BAR_PT = "pt-1.5";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
@@ -672,16 +674,29 @@ const AssistantMessage: FC = () => {
 
       <div
         data-slot="aui_assistant-message-footer"
-        className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
+        className={cn("ms-2 flex flex-col")}
       >
-        <BranchPicker />
-        <AssistantActionBar />
+        <div className={cn("flex items-center", ACTION_BAR_HEIGHT)}>
+          <BranchPicker />
+          <AssistantActionBar
+            onNegativeFeedbackToggle={() => setFeedbackOpen((v) => !v)}
+          />
+        </div>
+        {feedbackOpen && (
+          <MessageFeedbackPanel onClose={() => setFeedbackOpen(false)} />
+        )}
       </div>
     </MessagePrimitive.Root>
   );
 };
 
-const AssistantActionBar: FC = () => {
+const AssistantActionBar: FC<{ onNegativeFeedbackToggle: () => void }> = ({
+  onNegativeFeedbackToggle,
+}) => {
+  const negativeSubmitted = useAuiState(
+    (s) => s.message.metadata.submittedFeedback?.type === "negative",
+  );
+
   return (
     <ActionBarPrimitive.Root
       hideWhenRunning
@@ -695,7 +710,14 @@ const AssistantActionBar: FC = () => {
                     </AuiIf></ActionBarPrimitive.Copy>
       <AuiIf condition={(s) => s.thread.capabilities.feedback}>
         <ActionBarPrimitive.FeedbackPositive render={<TooltipIconButton tooltip="Helpful" className="data-[submitted=true]:bg-accent data-[submitted=true]:text-accent-foreground" />}><ThumbsUpIcon /></ActionBarPrimitive.FeedbackPositive>
-        <ActionBarPrimitive.FeedbackNegative render={<TooltipIconButton tooltip="Not helpful" className="data-[submitted=true]:bg-accent data-[submitted=true]:text-accent-foreground" />}><ThumbsDownIcon /></ActionBarPrimitive.FeedbackNegative>
+        <TooltipIconButton
+          tooltip="Not helpful — tell us why"
+          aria-pressed={negativeSubmitted}
+          onClick={onNegativeFeedbackToggle}
+          className={cn(negativeSubmitted && "bg-accent text-accent-foreground")}
+        >
+          <ThumbsDownIcon />
+        </TooltipIconButton>
       </AuiIf>
       <ActionBarPrimitive.Reload render={<TooltipIconButton tooltip="Refresh" />}><RefreshCwIcon /></ActionBarPrimitive.Reload>
       <ActionBarMorePrimitive.Root>
