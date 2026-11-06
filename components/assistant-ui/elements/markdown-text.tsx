@@ -158,12 +158,16 @@ const defaultComponents = memoizeMarkdownComponents({
     />
   ),
   a: ({ className, ...props }) => (
+    // Links in assistant replies (inline citations and the Sources line)
+    // open in a new tab so the chat panel keeps its place.
     <a
       className={cn(
         "aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
         className,
       )}
       {...props}
+      target="_blank"
+      rel="noopener noreferrer"
     />
   ),
   blockquote: ({ className, ...props }) => (
