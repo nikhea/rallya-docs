@@ -8,7 +8,11 @@ import { AssistantChatTransport, useChatRuntime } from "@assistant-ui/ai-sdk";
 import type { UIMessage } from "ai";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
-import { AssistantModal } from "@/components/assistant-ui/elements/assistant-modal.aui";
+import {
+  AssistantModal,
+  AssistantModalLoading,
+  AssistantModalPanel,
+} from "@/components/assistant-ui/elements/assistant-modal.aui";
 import { ThreadMetaSync } from "@/app/docs/thread-meta-sync";
 import { getOrCreateVisitorId } from "@/lib/visitor";
 
@@ -77,35 +81,29 @@ export function DocsAssistant() {
     retry: 1,
   });
 
-  // While a selected previous conversation loads, render nothing; on failure
-  // fall back to a fresh chat instead of blocking.
-  if (activeThreadId !== undefined) {
-    if (isLoading) return null;
-    if (isError) {
-      return (
+  // The popover shell stays mounted above the runtime. Selecting a previous
+  // conversation swaps the panel content inside it (loading state included)
+  // instead of unmounting the whole popover, so it never closes and reopens.
+  return (
+    <AssistantModal open={panelOpen} onOpenChange={setPanelOpen}>
+      {activeThreadId !== undefined && isLoading ? (
+        <AssistantModalLoading />
+      ) : (
         <ChatSurface
-          key={`new:${session}`}
+          key={
+            activeThreadId !== undefined && isError
+              ? `new:${session}`
+              : `${activeThreadId ?? "new"}:${session}`
+          }
           visitorId={visitorId}
+          snapshot={isError ? undefined : selected}
+          activeThreadId={isError ? undefined : activeThreadId}
           onSelectThread={selectThread}
           onNewThread={newThread}
-          panelOpen={panelOpen}
           onPanelOpenChange={setPanelOpen}
         />
-      );
-    }
-  }
-
-  return (
-    <ChatSurface
-      key={`${activeThreadId ?? "new"}:${session}`}
-      visitorId={visitorId}
-      snapshot={selected}
-      activeThreadId={activeThreadId}
-      onSelectThread={selectThread}
-      onNewThread={newThread}
-      panelOpen={panelOpen}
-      onPanelOpenChange={setPanelOpen}
-    />
+      )}
+    </AssistantModal>
   );
 }
 
@@ -115,7 +113,6 @@ const ChatSurface: React.FC<{
   activeThreadId?: string | undefined;
   onSelectThread: (id: string) => void;
   onNewThread: () => void;
-  panelOpen: boolean;
   onPanelOpenChange: (open: boolean) => void;
 }> = ({
   visitorId,
@@ -123,7 +120,6 @@ const ChatSurface: React.FC<{
   activeThreadId,
   onSelectThread,
   onNewThread,
-  panelOpen,
   onPanelOpenChange,
 }) => {
   // Thumbs feedback on any reply posts to the same-origin /api/docs-feedback
@@ -221,11 +217,11 @@ const ChatSurface: React.FC<{
   return (
     <AssistantRuntimeProvider runtime={runtime} config={config}>
       <ThreadMetaSync />
-      <AssistantModal
+      <AssistantModalPanel
         onNewThread={onNewThread}
         onSelectThread={onSelectThread}
         activeThreadId={activeThreadId ?? snapshot?.thread?.id}
-        open={panelOpen}
+        title={snapshot?.thread?.title ?? undefined}
         onOpenChange={onPanelOpenChange}
       />
     </AssistantRuntimeProvider>

@@ -8,20 +8,24 @@ import { File, getFileHref } from "@/components/assistant-ui/elements/file";
 import { ThreadFollowupSuggestions } from "@/components/assistant-ui/elements/follow-up-suggestions.aui";
 import { Image } from "@/components/assistant-ui/elements/image";
 import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningRoot,
-  ReasoningText,
-  ReasoningTrigger,
-} from "@/components/assistant-ui/elements/reasoning.aui";
-import { ToolFallback } from "@/components/assistant-ui/elements/tool-fallback.aui";
+// Reasoning UI is intentionally hidden in the docs assistant.
+// import {
+//   Reasoning,
+//   ReasoningContent,
+//   ReasoningRoot,
+//   ReasoningText,
+//   ReasoningTrigger,
+// } from "@/components/assistant-ui/elements/reasoning.aui";
+// Tool calls are hidden in the docs assistant: answers are what matter, not
+// the plumbing. Uncomment these imports (and the branches below) to bring the
+// tool cards back.
+// import { ToolFallback } from "@/components/assistant-ui/elements/tool-fallback.aui";
 import { MessageFeedbackPanel } from "@/components/assistant-ui/elements/message-feedback.aui";
-import {
-  ToolGroupContent,
-  ToolGroupRoot,
-  ToolGroupTrigger,
-} from "@/components/assistant-ui/elements/tool-group.aui";
+// import {
+//   ToolGroupContent,
+//   ToolGroupRoot,
+//   ToolGroupTrigger,
+// } from "@/components/assistant-ui/elements/tool-group.aui";
 import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,6 +57,7 @@ import {
   ChevronRightIcon,
   CopyIcon,
   DownloadIcon,
+  Loader2Icon,
   MicIcon,
   MoreHorizontalIcon,
   PhoneIcon,
@@ -74,34 +79,60 @@ import {
 
 export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
 
-const DefaultToolGroup: FC<PropsWithChildren<{ group: ThreadGroupPart }>> = ({
-  group,
-  children,
-}) => {
-  const [open, setOpen] = useState(false);
+// Tool-group cards are hidden in the docs assistant. Kept here (commented) so
+// the default collapsible tool UI can be restored by uncommenting it and the
+// "group-tool" case below.
+// const DefaultToolGroup: FC<PropsWithChildren<{ group: ThreadGroupPart }>> = ({
+//   group,
+//   children,
+// }) => {
+//   const [open, setOpen] = useState(false);
+//
+//   return (
+//     <ToolGroupRoot
+//       variant="ghost"
+//       open={open || group.counts.requiresAction > 0}
+//       onOpenChange={setOpen}
+//     >
+//       <ToolGroupTrigger
+//         count={group.indices.length}
+//         active={group.status.type === "running"}
+//       />
+//       <ToolGroupContent>{children}</ToolGroupContent>
+//     </ToolGroupRoot>
+//   );
+// };
+
+/**
+ * What the docs assistant shows in place of tool calls: a single muted line
+ * while the tool group is running, nothing once it has finished.
+ */
+const HiddenToolActivity: FC<{ group: ThreadGroupPart }> = ({ group }) => {
+  if (group.status.type !== "running") return null;
 
   return (
-    <ToolGroupRoot
-      variant="ghost"
-      open={open || group.counts.requiresAction > 0}
-      onOpenChange={setOpen}
+    <div
+      data-slot="aui_hidden-tool-activity"
+      role="status"
+      className="text-muted-foreground flex items-center gap-2 py-1 text-sm"
     >
-      <ToolGroupTrigger
-        count={group.indices.length}
-        active={group.status.type === "running"}
+      <Loader2Icon
+        className="size-3.5 animate-spin motion-reduce:animate-none"
+        aria-hidden
       />
-      <ToolGroupContent>{children}</ToolGroupContent>
-    </ToolGroupRoot>
+      <span>Searching the docs…</span>
+    </div>
   );
 };
 
 const shouldShowComposerResume = (s: AssistantState) =>
   !!s.thread.canResume && s.composer.type === "thread" && s.composer.isEmpty;
 
-const reasoningDuration = (timing: ThreadGroupPart["timing"]) =>
-  timing?.completedAt === undefined
-    ? undefined
-    : Math.round((timing.completedAt - timing.startedAt) / 1000);
+// Reasoning UI is hidden in the docs assistant.
+// const reasoningDuration = (timing: ThreadGroupPart["timing"]) =>
+//   timing?.completedAt === undefined
+//     ? undefined
+//     : Math.round((timing.completedAt - timing.startedAt) / 1000);
 
 /**
  * Optional component overrides for the thread. `AssistantMessage` and
@@ -571,9 +602,9 @@ const MessageError: FC = () => {
 
 const AssistantMessage: FC = () => {
   const {
-    ToolFallback: ToolFallbackComponent = ToolFallback,
-    ToolGroup,
-    ReasoningGroup,
+    // ToolFallback: ToolFallbackComponent = ToolFallback,
+    // ToolGroup,
+    // ReasoningGroup,
     TaskGroup: TaskGroupComponent,
   } = useContext(ThreadComponentsContext);
   const groupBy = TaskGroupComponent ? taskAwareGroupBy : messageGroupBy;
@@ -602,38 +633,52 @@ const AssistantMessage: FC = () => {
                 return TaskGroupComponent ? (
                   <TaskGroupComponent group={part} />
                 ) : null;
+              // Tool cards are hidden in the docs assistant; a small activity
+              // line stands in while tools run. Re-enable this branch (and the
+              // "tool-call" case below) to show the tool UI again.
+              // case "group-tool":
+              //   if (ToolGroup) {
+              //     return (
+              //       <ToolGroup group={part}>{children}</ToolGroup>
+              //     );
+              //   }
+              //   return (
+              //     <DefaultToolGroup group={part}>{children}</DefaultToolGroup>
+              //   );
               case "group-tool":
-                if (ToolGroup) {
-                  return <ToolGroup group={part}>{children}</ToolGroup>;
-                }
-                return (
-                  <DefaultToolGroup group={part}>{children}</DefaultToolGroup>
-                );
-              case "group-reasoning": {
-                if (ReasoningGroup) {
-                  return (
-                    <ReasoningGroup group={part}>{children}</ReasoningGroup>
-                  );
-                }
-                const running = part.status.type === "running";
-                return (
-                  <ReasoningRoot streaming={running}>
-                    <ReasoningTrigger
-                      active={running}
-                      duration={reasoningDuration(part.timing)}
-                    />
-                    <ReasoningContent aria-busy={running}>
-                      <ReasoningText>{children}</ReasoningText>
-                    </ReasoningContent>
-                  </ReasoningRoot>
-                );
-              }
+                return <HiddenToolActivity group={part} />;
+              // Reasoning is hidden in the docs assistant (shown as tool-free,
+              // plain answers). Re-enable this and the "reasoning" case below
+              // to bring back the collapsible thought panel.
+              // case "group-reasoning": {
+              //   if (ReasoningGroup) {
+              //     return (
+              //       <ReasoningGroup group={part}>{children}</ReasoningGroup>
+              //     );
+              //   }
+              //   const running = part.status.type === "running";
+              //   return (
+              //     <ReasoningRoot streaming={running}>
+              //       <ReasoningTrigger
+              //         active={running}
+              //         duration={reasoningDuration(part.timing)}
+              //       />
+              //       <ReasoningContent aria-busy={running}>
+              //         <ReasoningText>{children}</ReasoningText>
+              //       </ReasoningContent>
+              //     </ReasoningRoot>
+              //   );
+              // }
               case "text":
                 return <MarkdownText />;
-              case "reasoning":
-                return <Reasoning {...part} />;
+              // case "reasoning":
+              //   return <Reasoning {...part} />;
+              // Tool calls are hidden in the docs assistant (see
+              // "group-tool" above). Uncomment to render them again.
+              // case "tool-call":
+              //   return part.toolUI ?? <ToolFallbackComponent {...part} />;
               case "tool-call":
-                return part.toolUI ?? <ToolFallbackComponent {...part} />;
+                return null;
               case "data":
                 return part.dataRendererUI;
               case "file":
