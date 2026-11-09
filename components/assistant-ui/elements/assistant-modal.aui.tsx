@@ -4,6 +4,7 @@ import {
   BotIcon,
   ChevronDownIcon,
   HistoryIcon,
+  Loader2Icon,
   PlusIcon,
   XIcon,
 } from "lucide-react";
@@ -16,11 +17,9 @@ import {
   useMemo,
   useRef,
   useState,
+  type PropsWithChildren,
 } from "react";
-import {
-  useAuiEvent,
-  useAuiState,
-} from "@assistant-ui/react";
+import { useAuiEvent, useAuiState } from "@assistant-ui/react";
 import { Popover as PopoverPrimitive } from "@base-ui/react/popover";
 
 import { Thread } from "@/components/assistant-ui/elements/thread.aui";
@@ -29,33 +28,24 @@ import { TooltipIconButton } from "@/components/assistant-ui/elements/tooltip-ic
 
 type ModalView = "thread" | "list";
 
-export type AssistantModalProps = {
-  /** Start a fresh, empty conversation (used by the + button). */
-  onNewThread: () => void;
-  /** Open a previous conversation (History list). */
-  onSelectThread: (id: string) => void;
-  /** Currently open conversation's Mastra thread id, if any. */
-  activeThreadId?: string | undefined;
-  /** Panel open state, lifted above the thread remount so switches keep it open. */
+export type AssistantModalProps = PropsWithChildren<{
+  /** Panel open state, owned above the runtime so thread switches keep it open. */
   open: boolean;
   onOpenChange: (open: boolean) => void;
-};
+}>;
 
+/**
+ * Popover shell for the Ask AI panel. The shell intentionally sits *above*
+ * the chat runtime/provider: switching conversations remounts the runtime
+ * subtree, so anything rendered inside the popup is replaced while the popup
+ * element itself stays mounted (no close-then-open flash). The portal is
+ * `keepMounted` so closing the panel does not throw away the conversation.
+ */
 export const AssistantModal: FC<AssistantModalProps> = ({
-  onNewThread,
-  onSelectThread,
-  activeThreadId,
   open,
   onOpenChange,
+  children,
 }) => {
-  const [view, setView] = useState<ModalView>("thread");
-  const thread = useMemo(() => <Thread />, []);
-
-  useAuiEvent("thread.runStart", () => {
-    setView("thread");
-    onOpenChange(true);
-  });
-
   return (
     <PopoverPrimitive.Root
       open={open}
@@ -67,7 +57,6 @@ export const AssistantModal: FC<AssistantModalProps> = ({
         ) {
           eventDetails.cancel();
         } else {
-          if (nextOpen) setView("thread");
           onOpenChange(nextOpen);
         }
       }}
@@ -79,7 +68,7 @@ export const AssistantModal: FC<AssistantModalProps> = ({
           )}
         />
       </div>
-      <PopoverPrimitive.Portal>
+      <PopoverPrimitive.Portal keepMounted>
         <PopoverPrimitive.Positioner
           positionMethod="fixed"
           // Fill the viewport (small inset) instead of anchoring to the
@@ -99,26 +88,7 @@ export const AssistantModal: FC<AssistantModalProps> = ({
           <PopoverPrimitive.Popup
             className="group/modal aui-root aui-modal-content bg-popover text-popover-foreground data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [&[data-open]_.aui-thread-viewport-footer]:animate-in [&[data-open]_.aui-thread-viewport-footer]:fade-in-0 [&[data-open]_.aui-thread-viewport-footer]:slide-in-from-bottom-2 [&[data-open]_.aui-thread-viewport-footer]:fill-mode-backwards [&_.aui-thread-viewport-footer]:bg-popover ring-foreground/10 z-50 flex h-full w-full flex-col gap-0 overflow-clip overscroll-contain rounded-xl p-0 text-base antialiased shadow-[0_16px_48px_-24px_rgb(0_0_0/0.25)] ring-1 transition-none ease-[cubic-bezier(0.32,0.72,0,1)] outline-none data-closed:duration-200 data-open:duration-300 motion-reduce:animate-none dark:shadow-[0_16px_48px_-24px_rgb(0_0_0/0.6)] [&_.aui-thread-root]:bg-inherit motion-reduce:[&_.aui-thread-viewport-footer]:animate-none [&[data-open]_.aui-thread-viewport-footer]:delay-100 [&[data-open]_.aui-thread-viewport-footer]:duration-300 [&[data-open]_.aui-thread-viewport-footer]:ease-[cubic-bezier(0.32,0.72,0,1)]"
           >
-            <AssistantModalHeader view={view} onViewChange={setView} onNewThread={onNewThread} />
-            <div className="aui-modal-body relative min-h-0 flex-1">
-              <div
-                ref={(node) => {
-                  if (node) node.inert = view === "list";
-                }}
-                className="aui-modal-thread h-full"
-              >
-                {thread}
-              </div>
-              {view === "list" && (
-                <ThreadHistoryList
-                  activeThreadId={activeThreadId}
-                  onSelectThread={(id) => {
-                    onSelectThread(id);
-                    setView("thread");
-                  }}
-                />
-              )}
-            </div>
+            {children}
           </PopoverPrimitive.Popup>
         </PopoverPrimitive.Positioner>
       </PopoverPrimitive.Portal>
@@ -126,12 +96,96 @@ export const AssistantModal: FC<AssistantModalProps> = ({
   );
 };
 
+export type AssistantModalPanelProps = {
+  /** Start a fresh, empty conversation (used by the + button). */
+  onNewThread: () => void;
+  /** Open a previous conversation (History list). */
+  onSelectThread: (id: string) => void;
+  /** Currently open conversation's Mastra thread id, if any. */
+  activeThreadId?: string | undefined;
+  /** Stored title for the open conversation (shown until the runtime has one). */
+  title?: string | undefined;
+  onOpenChange: (open: boolean) => void;
+};
+
+/**
+ * Runtime-dependent panel content: header, thread, and history list. Rendered
+ * inside `AssistantModal` so a thread switch only swaps these children.
+ */
+export const AssistantModalPanel: FC<AssistantModalPanelProps> = ({
+  onNewThread,
+  onSelectThread,
+  activeThreadId,
+  title,
+  onOpenChange,
+}) => {
+  const [view, setView] = useState<ModalView>("thread");
+  const thread = useMemo(() => <Thread />, []);
+
+  useAuiEvent("thread.runStart", () => {
+    setView("thread");
+    onOpenChange(true);
+  });
+
+  return (
+    <>
+      <AssistantModalHeader
+        view={view}
+        onViewChange={setView}
+        onNewThread={onNewThread}
+        fallbackTitle={title}
+      />
+      <div className="aui-modal-body relative min-h-0 flex-1">
+        <div
+          ref={(node) => {
+            if (node) node.inert = view === "list";
+          }}
+          className="aui-modal-thread h-full"
+        >
+          {thread}
+        </div>
+        {view === "list" && (
+          <ThreadHistoryList
+            activeThreadId={activeThreadId}
+            onSelectThread={(id) => {
+              onSelectThread(id);
+              setView("thread");
+            }}
+          />
+        )}
+      </div>
+    </>
+  );
+};
+
+/** Placeholder shown while a previous conversation is being fetched. */
+export const AssistantModalLoading: FC = () => {
+  return (
+    <div data-slot="aui-modal-loading" className="flex h-full flex-col">
+      <div className="aui-modal-header border-foreground/10 flex h-11 shrink-0 items-center gap-2 border-b ps-3.5 pe-2">
+        <span className="aui-modal-title min-w-0 flex-1 truncate text-[13px] font-medium">
+          Conversation
+        </span>
+      </div>
+      <div
+        role="status"
+        aria-live="polite"
+        className="text-muted-foreground flex flex-1 items-center justify-center gap-2 text-sm"
+      >
+        <Loader2Icon className="size-4 animate-spin" aria-hidden />
+        <span>Loading conversation…</span>
+      </div>
+    </div>
+  );
+};
+
 const AssistantModalHeader: FC<{
   view: ModalView;
   onViewChange: (view: ModalView) => void;
   onNewThread: () => void;
-}> = ({ view, onViewChange, onNewThread }) => {
-  const title = useAuiState((s) => s.threadListItem.title);
+  fallbackTitle?: string | undefined;
+}> = ({ view, onViewChange, onNewThread, fallbackTitle }) => {
+  const runtimeTitle = useAuiState((s) => s.threadListItem.title);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const shownViewRef = useRef(view);
 
@@ -155,7 +209,9 @@ const AssistantModalHeader: FC<{
         tabIndex={-1}
         className="aui-modal-title min-w-0 flex-1 truncate text-[13px] font-medium outline-none"
       >
-        {view === "list" ? "Threads" : title || "New Chat"}
+        {view === "list"
+          ? "Threads"
+          : runtimeTitle || fallbackTitle || "New Chat"}
       </PopoverPrimitive.Title>
       <div className="flex shrink-0 items-center gap-0.5">
         <TooltipIconButton
@@ -194,8 +250,6 @@ const AssistantModalHeader: FC<{
     </div>
   );
 };
-
-
 
 type AssistantModalButtonProps = Omit<
   ComponentPropsWithoutRef<typeof TooltipIconButton>,
