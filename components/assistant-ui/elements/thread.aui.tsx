@@ -104,15 +104,15 @@ export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
 // };
 
 /**
- * What the docs assistant shows in place of tool calls: a single muted line
- * while the tool group is running, nothing once it has finished.
+ * What the docs assistant shows in place of tool calls: one continuous muted
+ * line for the whole turn, from send until the answer text starts streaming.
+ * Because it is message-level (not per tool group) it never flickers off and
+ * back on between consecutive tool calls.
  */
-const HiddenToolActivity: FC<{ group: ThreadGroupPart }> = ({ group }) => {
-  if (group.status.type !== "running") return null;
-
+const AssistantWorking: FC = () => {
   return (
     <div
-      data-slot="aui_hidden-tool-activity"
+      data-slot="aui_assistant-working"
       role="status"
       className="text-muted-foreground flex items-center gap-2 py-1 text-sm"
     >
@@ -609,6 +609,16 @@ const AssistantMessage: FC = () => {
   } = useContext(ThreadComponentsContext);
   const groupBy = TaskGroupComponent ? taskAwareGroupBy : messageGroupBy;
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // One activity line for the whole turn: runs while tools work and hides as
+  // soon as answer text starts streaming. Message-level on purpose — a
+  // per-group line would blink between consecutive tool calls.
+  const showWorking = useAuiState(
+    (s) =>
+      s.message.status?.type === "running" &&
+      !s.message.parts.some(
+        (part) => part.type === "text" && part.text.trim().length > 0,
+      ),
+  );
 
   const ACTION_BAR_PT = "pt-1.5";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
@@ -624,6 +634,7 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-content"
         className="text-foreground px-2 leading-relaxed wrap-break-word"
       >
+        {showWorking && <AssistantWorking />}
         <MessagePrimitive.GroupedParts groupBy={groupBy}>
           {({ part, children }) => {
             switch (part.type) {
@@ -633,9 +644,10 @@ const AssistantMessage: FC = () => {
                 return TaskGroupComponent ? (
                   <TaskGroupComponent group={part} />
                 ) : null;
-              // Tool cards are hidden in the docs assistant; a small activity
-              // line stands in while tools run. Re-enable this branch (and the
-              // "tool-call" case below) to show the tool UI again.
+              // Tool cards are hidden in the docs assistant; the message-level
+              // "Searching the docs…" line (see AssistantWorking) covers the
+              // whole run instead. Re-enable this branch (and the "tool-call"
+              // case below) to show the tool UI again.
               // case "group-tool":
               //   if (ToolGroup) {
               //     return (
@@ -646,7 +658,7 @@ const AssistantMessage: FC = () => {
               //     <DefaultToolGroup group={part}>{children}</DefaultToolGroup>
               //   );
               case "group-tool":
-                return <HiddenToolActivity group={part} />;
+                return null;
               // Reasoning is hidden in the docs assistant (shown as tool-free,
               // plain answers). Re-enable this and the "reasoning" case below
               // to bring back the collapsible thought panel.
@@ -694,6 +706,8 @@ const AssistantMessage: FC = () => {
                   </div>
                 );
               case "indicator":
+                // The activity line already says the assistant is working.
+                if (showWorking) return null;
                 return (
                   <span
                     data-slot="aui_assistant-message-indicator"

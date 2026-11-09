@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  BotIcon,
+  BookOpenIcon,
   ChevronDownIcon,
   HistoryIcon,
   Loader2Icon,
@@ -273,7 +273,7 @@ const AssistantModalButton = forwardRef<
       className="aui-modal-button bg-background text-foreground border-border/60 hover:border-border hover:bg-background size-full rounded-full border transition-[border-color,scale] duration-150 ease-out active:scale-96 motion-reduce:transition-none"
       ref={ref}
     >
-      <BotIcon
+      <BookOpenIcon
         data-open={open ? "" : undefined}
         data-closed={open ? undefined : ""}
         className="aui-modal-button-closed-icon absolute size-5 transition-[scale,opacity,filter] duration-200 ease-[cubic-bezier(0.2,0,0,1)] data-closed:scale-100 data-closed:opacity-100 data-closed:blur-[0px] data-open:scale-25 data-open:opacity-0 data-open:blur-[4px] motion-reduce:transition-none"
