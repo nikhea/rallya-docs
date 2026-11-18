@@ -73,3 +73,18 @@ jobs:
 
       - name: Trigger production deploy
         run: curl -fsS -X POST "$VERCEL_DEPLOY_HOOK_URL"
+
+      # Runs last: the site deploy is already in flight, so a knowledge failure
+      # is visible without blocking the publish. Only dispatch when Sanity
+      # actually changed, so code-only pushes do not spend agent runner minutes.
+      - name: Notify docs agent
+        if: steps.sync.outputs.docs_changed != '0'
+        env:
+          DOCS_AGENT_DISPATCH_TOKEN: ${{ secrets.DOCS_AGENT_DISPATCH_TOKEN }}
+        run: |
+          test -n "$DOCS_AGENT_DISPATCH_TOKEN" || { echo "::error::DOCS_AGENT_DISPATCH_TOKEN is not configured"; exit 1; }
+          curl -fsS --retry 3 --retry-all-errors -X POST \
+            https://api.github.com/repos/nikhea/rallya-docs-agent/dispatches \
+            -H "Authorization: Bearer $DOCS_AGENT_DISPATCH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -d "{\"event_type\":\"docs-published\",\"client_payload\":{\"commit\":\"$GITHUB_SHA\"}}"
