@@ -68,6 +68,7 @@ jobs:
         run: bun scripts/sync-docs-to-sanity.mjs --check
 
       - name: Sync content/docs into Sanity
+        id: sync
         run: bun scripts/sync-docs-to-sanity.mjs --prune
 
       - name: Trigger production deploy
