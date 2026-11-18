@@ -1,32 +1,7 @@
 import { defineField, defineType } from "sanity";
+import { sidebarIcons } from "./icons";
 
-/**
- * Icons referenced by the sidebar. Values are PascalCase lucide-react icon
- * names, resolved at build time by `lucideIconsPlugin()`.
- */
-export const sidebarIcons = [
-  "House",
-  "Rocket",
-  "Blocks",
-  "ShieldCheck",
-  "Building",
-  "Ticket",
-  "CreditCard",
-  "QrCode",
-  "Package",
-  "Wallet",
-  "Code",
-  "Braces",
-  "Wrench",
-  "Route",
-  "Database",
-  "KeyRound",
-  "Server",
-  "Bot",
-  "ShoppingBag",
-  "Hammer",
-  "Library",
-] as const;
+export { sidebarIcons };
 
 export const docSection = defineType({
   name: "docSection",
