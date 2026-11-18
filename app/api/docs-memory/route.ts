@@ -16,6 +16,10 @@
  *                        "output-available", input, output }   (only `result` state)
  *   step-start / data-om-* / signal messages -> dropped
  *
+ * Assistant replies also get `metadata.custom.traceId`, matched from the
+ * thread's traces by run timestamp, so thumbs feedback keeps working after a
+ * conversation is restored (stored messages don't keep stream metadata).
+ *
  * Visitor ids are unguessable UUIDs held in the browser's localStorage;
  * anyone presenting one can read that visitor's threads (same threat model
  * as any device-local history). Nothing else is exposed.
@@ -54,6 +58,7 @@ type MastraPart = { type?: string; [key: string]: unknown };
 type MastraMessage = {
   id: string;
   role: string;
+  createdAt?: unknown;
   content?: { format?: number | string; parts?: MastraPart[] } | unknown;
 };
 
@@ -61,7 +66,12 @@ type UIMessage = {
   id: string;
   role: "user" | "assistant";
   parts: Record<string, unknown>[];
+  /** Carries `traceId` so restored replies can still receive thumbs feedback. */
+  metadata?: { custom: { traceId: string } };
 };
+
+/** A restored message with the timestamp used to match it to its trace. */
+type RestoredMessage = UIMessage & { createdAt?: number };
 
 const contentParts = (message: MastraMessage): MastraPart[] => {
   const content = message.content;
@@ -71,7 +81,7 @@ const contentParts = (message: MastraMessage): MastraPart[] => {
 };
 
 /** Reshape one Mastra message into an AI SDK v7 UI message; null when nothing usable remains. */
-function toUIMessage(message: MastraMessage): UIMessage | null {
+function toUIMessage(message: MastraMessage): RestoredMessage | null {
   if (message.role !== "user" && message.role !== "assistant") return null;
 
   const parts: Record<string, unknown>[] = [];
@@ -124,7 +134,98 @@ function toUIMessage(message: MastraMessage): UIMessage | null {
   }
 
   if (parts.length === 0) return null;
-  return { id: String(message.id), role: message.role as UIMessage["role"], parts };
+  return {
+    id: String(message.id),
+    role: message.role as UIMessage["role"],
+    parts,
+    createdAt: toTimestamp(message.createdAt),
+  };
+}
+
+const toTimestamp = (value: unknown): number | undefined => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+};
+
+type TraceWindow = { traceId: string; start: number; end: number };
+
+/**
+ * How far past a run's end an assistant message may be stamped and still be
+ * considered that run's reply. Covers clock skew and the memory-save step
+ * landing just after the trace closes.
+ */
+const TRACE_MATCH_SLACK_MS = 5 * 60_000;
+const TRACE_PAGE_SIZE = 100;
+const TRACE_MAX_PAGES = 5;
+
+/**
+ * Root-span time windows for every trace on this thread. Mastra's stored
+ * messages do not keep the stream's `messageMetadata`, so history is re-anchored
+ * to traces by timestamp before it reaches the client — otherwise thumbs
+ * feedback on a restored reply has no `traceId` to submit.
+ */
+async function loadTraceWindows(
+  mastra: MastraClient,
+  threadId: string,
+): Promise<TraceWindow[]> {
+  const windows: TraceWindow[] = [];
+  for (let page = 0; page < TRACE_MAX_PAGES; page += 1) {
+    const result = await mastra.listTraces({
+      filters: { threadId },
+      pagination: { page, perPage: TRACE_PAGE_SIZE },
+      orderBy: { field: "startedAt", direction: "ASC" },
+    });
+    for (const span of result.spans ?? []) {
+      const start = toTimestamp(span.startedAt);
+      const end = toTimestamp(span.endedAt) ?? start;
+      if (!span.traceId || start === undefined || end === undefined) continue;
+      windows.push({ traceId: span.traceId, start, end });
+    }
+    if (!result.pagination?.hasMore) break;
+  }
+  return windows;
+}
+
+/** The trace whose run contains the message timestamp, else the nearest earlier run. */
+function matchTraceId(
+  createdAt: number,
+  windows: readonly TraceWindow[],
+): string | undefined {
+  const containing = windows.find(
+    (window) => createdAt >= window.start && createdAt <= window.end,
+  );
+  if (containing) return containing.traceId;
+
+  let best: TraceWindow | undefined;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const window of windows) {
+    if (window.start > createdAt) continue;
+    const distance = createdAt - window.end;
+    if (distance < bestDistance) {
+      best = window;
+      bestDistance = distance;
+    }
+  }
+  return best !== undefined && bestDistance <= TRACE_MATCH_SLACK_MS
+    ? best.traceId
+    : undefined;
+}
+
+/** Attach `metadata.custom.traceId` to assistant replies that match a trace. */
+function withTraceMetadata(
+  messages: readonly RestoredMessage[],
+  windows: readonly TraceWindow[],
+): UIMessage[] {
+  return messages.map(({ createdAt, ...message }) => {
+    if (message.role !== "assistant" || createdAt === undefined) return message;
+    const traceId = matchTraceId(createdAt, windows);
+    return traceId ? { ...message, metadata: { custom: { traceId } } } : message;
+  });
 }
 
 export async function GET(request: Request) {
@@ -211,9 +312,22 @@ export async function GET(request: Request) {
     return json({ error: "mastra_unreachable" }, 502);
   }
 
-  const messages = (rawMessages as MastraMessage[])
+  const restored = (rawMessages as MastraMessage[])
     .map(toUIMessage)
-    .filter((m): m is UIMessage => m !== null);
+    .filter((m): m is RestoredMessage => m !== null);
+
+  // Best-effort: history must still load when observability is unreachable.
+  let traceWindows: TraceWindow[] = [];
+  try {
+    traceWindows = await loadTraceWindows(mastra, owned.id);
+  } catch (err) {
+    console.warn(
+      "[docs-memory] failed to load traces; restored replies will not carry feedback traceIds",
+      err,
+    );
+  }
+
+  const messages = withTraceMetadata(restored, traceWindows);
 
   return json({
     thread: {

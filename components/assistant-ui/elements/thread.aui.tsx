@@ -106,23 +106,84 @@ export type ThreadGroupPart = MessagePrimitive.GroupedParts.GroupPart;
 // };
 
 /**
- * What the docs assistant shows in place of tool calls: one continuous muted
- * line for the whole turn, from send until the answer text starts streaming.
- * Because it is message-level (not per tool group) it never flickers off and
- * back on between consecutive tool calls.
+ * One-line progress labels for tool activity. Generalized from the tool name
+ * so new tools don't need a per-tool entry: the last word picks the verb, the
+ * rest is the subject, and `knowledge` is dropped so `knowledge_search` reads
+ * as "Searching the docs…".
  */
-const AssistantWorking: FC = () => {
+const isWorkingMemoryTool = (toolName: string) =>
+  /^(update)?workingmemory$/i.test(toolName.replace(/[^a-z]/gi, ""));
+
+const humanizeToolName = (toolName: string) =>
+  toolName
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const describeToolActivity = (toolName: string): string | undefined => {
+  // Working memory is internal plumbing: never surface it in the UI.
+  if (isWorkingMemoryTool(toolName)) return undefined;
+
+  const words = humanizeToolName(toolName).split(/\s+/).filter(Boolean);
+  const verb = words[words.length - 1] ?? "";
+  const subject = words
+    .slice(0, -1)
+    .filter((word) => word !== "knowledge")
+    .join(" ");
+
+  switch (verb) {
+    case "search":
+      return `Searching ${subject || "the docs"}…`;
+    case "read":
+      return `Reading ${subject || "the docs"}…`;
+    case "list":
+      return `Listing ${subject || "the docs"}…`;
+    case "find":
+      return `Finding ${subject || "the docs"}…`;
+    default:
+      return `Using ${words.join(" ") || "a tool"}…`;
+  }
+};
+
+/**
+ * The current turn's one-line activity, or undefined when the line should be
+ * hidden (not running, or answer text has started streaming). The latest
+ * visible tool call drives the label, so consecutive tools update the same
+ * line instead of appending new ones.
+ */
+const getWorkingActivity = (state: AssistantState): string | undefined => {
+  if (state.message.status?.type !== "running") return undefined;
+  if (
+    state.message.parts.some(
+      (part) => part.type === "text" && part.text.trim().length > 0,
+    )
+  ) {
+    return undefined;
+  }
+
+  for (let i = state.message.parts.length - 1; i >= 0; i -= 1) {
+    const part = state.message.parts[i];
+    if (part?.type !== "tool-call") continue;
+    const label = describeToolActivity(part.toolName);
+    if (label) return label;
+  }
+  return "Searching the docs…";
+};
+
+const AssistantWorking: FC<{ label: string }> = ({ label }) => {
   return (
     <div
       data-slot="aui_assistant-working"
       role="status"
+      aria-live="polite"
       className="text-muted-foreground flex items-center gap-2 py-1 text-sm"
     >
       <Loader2Icon
         className="size-3.5 animate-spin motion-reduce:animate-none"
         aria-hidden
       />
-      <span>Searching the docs…</span>
+      <span>{label}</span>
     </div>
   );
 };
@@ -621,14 +682,10 @@ const AssistantMessage: FC = () => {
   }, [positiveSent]);
   // One activity line for the whole turn: runs while tools work and hides as
   // soon as answer text starts streaming. Message-level on purpose — a
-  // per-group line would blink between consecutive tool calls.
-  const showWorking = useAuiState(
-    (s) =>
-      s.message.status?.type === "running" &&
-      !s.message.parts.some(
-        (part) => part.type === "text" && part.text.trim().length > 0,
-      ),
-  );
+  // per-group line would blink between consecutive tool calls. The label
+  // follows the newest visible tool, so "Searching…" becomes "Reading…" in
+  // place rather than adding another line.
+  const activity = useAuiState(getWorkingActivity);
 
   const ACTION_BAR_PT = "pt-1.5";
   // Keep the action bar inside the contained root's paint box, then cancel its reserved space in flow.
@@ -644,7 +701,7 @@ const AssistantMessage: FC = () => {
         data-slot="aui_assistant-message-content"
         className="text-foreground px-2 leading-relaxed wrap-break-word"
       >
-        {showWorking && <AssistantWorking />}
+        {activity !== undefined && <AssistantWorking label={activity} />}
         <MessagePrimitive.GroupedParts groupBy={groupBy}>
           {({ part, children }) => {
             switch (part.type) {
@@ -717,7 +774,7 @@ const AssistantMessage: FC = () => {
                 );
               case "indicator":
                 // The activity line already says the assistant is working.
-                if (showWorking) return null;
+                if (activity !== undefined) return null;
                 return (
                   <span
                     data-slot="aui_assistant-message-indicator"
