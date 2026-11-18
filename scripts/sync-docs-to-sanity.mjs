@@ -19,7 +19,7 @@
  * (and manual Studio edits outside the pipeline) can be told apart.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { compile } from "@mdx-js/mdx";
 import { createClient } from "@sanity/client";
@@ -293,6 +293,20 @@ function toPageDoc(page) {
   return doc;
 }
 
+// --- outputs -----------------------------------------------------------------
+
+/**
+ * Report how many documents this run wrote or deleted, for the workflow that
+ * publishes. Appending (never truncating) keeps other steps' outputs intact.
+ * Only apply runs report a count: `--check` and `--dry-run` write nothing, so
+ * they must not look like a publish.
+ */
+function setDocsChanged(count) {
+  const outputFile = process.env.GITHUB_OUTPUT;
+  if (!outputFile) return;
+  appendFileSync(outputFile, `docs_changed=${count}\n`);
+}
+
 // --- main --------------------------------------------------------------------
 
 async function main() {
@@ -384,13 +398,15 @@ async function main() {
   }
 
   const applyingDeletions = prune && deletions.length > 0;
+  const changed = writes.length + (applyingDeletions ? deletions.length : 0);
 
   if (dryRun) {
     console.log("Dry run: no documents were written or deleted.");
     return;
   }
 
-  if (writes.length === 0 && !applyingDeletions) {
+  if (changed === 0) {
+    setDocsChanged(0);
     console.log("Nothing to do.");
     return;
   }
@@ -401,6 +417,8 @@ async function main() {
     for (const doc of deletions) transaction.delete(doc._id);
   }
   await transaction.commit();
+
+  setDocsChanged(changed);
 
   console.log(
     `Synced ${writes.length} document(s)` +
