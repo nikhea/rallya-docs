@@ -145,15 +145,24 @@ The MDX files in `content/docs/` are the **source of truth**. Every push to
 1. validates frontmatter, slugs, sidebar icons and MDX compilation (`--check`),
 2. syncs the pages and sections into Sanity (project **Rallya Docs**, org
    **rallya**, dataset `production`) as `docPage` / `docSection` documents,
-3. deletes Sanity documents removed from the manifest, and
-4. triggers the production deploy with a Vercel deploy hook.
+3. deletes Sanity documents removed from the manifest,
+4. triggers the production deploy with a Vercel deploy hook, and
+5. notifies the docs agent so its Knowledge picks up the new content.
 
 Pushes to Sanity happen before the build, so the static pages and the `llms`
 endpoints always render the content that was just merged.
 
 ```
-edit content/docs/*.mdx → PR (--check) → merge to main → sync → deploy
+edit content/docs/*.mdx → PR (--check) → merge to main → sync → deploy → agent sync
 ```
+
+Step 5 is a `repository_dispatch` to `nikhea/rallya-docs-agent`
+(`event_type: docs-published`). The sync script writes `docs_changed=<writes +
+deletions>` to `GITHUB_OUTPUT`, and the dispatch step is skipped when that count
+is `0`, so code-only pushes do not wake the agent. That workflow runs
+`bun run scripts/sync-sanity.ts --remove`, which rewrites only pages whose body
+changed and prunes deleted ones — it never re-uploads the whole corpus. See
+`rallya-docs-agent` → `plan/knowledge-auto-sync.md`.
 
 The embedded studio is at [`/studio`](http://localhost:3000/studio).
 `sanity/schema.ts` defines the schemas, `sanity/lib/` the client and GROQ
@@ -202,6 +211,12 @@ Review a `--dry-run --prune` before the first real prune.
   its URL in the GitHub secret `VERCEL_DEPLOY_HOOK_URL`.
 - **GitHub → Settings → Secrets and variables → Actions** — add
   `SANITY_API_WRITE_TOKEN` (Editor role) and `VERCEL_DEPLOY_HOOK_URL`.
+- **Docs agent dispatch** — create a fine-grained personal access token scoped to
+  `nikhea/rallya-docs-agent` only, with **Contents: read and write**, and store it
+  as `DOCS_AGENT_DISPATCH_TOKEN`. The `Notify docs agent` step uses it to POST a
+  `docs-published` event. Without it, the run fails after the deploy has already
+  been triggered, which is deliberate: publishing is never blocked by the agent.
+  Re-running the workflow from Actions is safe.
 - **Sanity** — keep the webhook to `/api/sanity-revalidate` (it freshens ISR
   routes); the redeploy is what updates the static pages. Make sure the
   deployed origin is in the project's CORS origins.
