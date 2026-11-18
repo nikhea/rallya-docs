@@ -31,3 +31,17 @@ never exceed event capacity (409 both directions).
 Active (non-cancelled) events per org are plan-limited (Free: 3) — over
 quota, creation fails `402 UPGRADE_REQUIRED`. Existing events are
 grandfathered.
+
+## Endpoints
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `GET /events`, `GET /events/:id` | no | Published only; drafts/cancelled stealth-404 |
+| `GET/POST /orgs/:id/events` | yes | Member read / ADMIN+ create; over quota → `402` |
+| `GET/PATCH/DELETE /orgs/:id/events/:eventId` | yes (ADMIN+) | |
+| `POST .../publish` · `.../unpublish` · `.../cancel` | yes (ADMIN+) | The only lifecycle transitions, never via update |
+| `POST .../cover` · `POST .../images` · `GET .../images` | yes (ADMIN+) | `multipart/form-data`, ≤ 5 MB, jpeg/png/webp |
+| `GET /events/:id/tickets` | no | Public discovery (UUID only) |
+| `GET/POST /orgs/:id/events/:eventId/tickets` | yes (ADMIN+) | |
+| `GET/PATCH/DELETE .../tickets/:ticketId` | yes (ADMIN+) | |
+| `POST .../tickets/:ticketId/activate` · `.../pause` | yes (ADMIN+) | Only ACTIVE types sell |

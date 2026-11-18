@@ -31,3 +31,12 @@ Organizer writes over quota or gated features fail `402
 UPGRADE_REQUIRED`: event create, member add/invite accept, role define,
 API-key mint, kit define. Buyer cap violations read as `409` fullness.
 Absent subscriptions resolve Free (fail-closed, never open).
+
+## Endpoints
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `GET /subscription/plans` | no | Public plan catalog |
+| `GET /orgs/:id/subscription` | yes | Members; absent subscription reads Free |
+| `POST /orgs/:id/subscription/checkout` | yes (OWNER) | `{plan}` → 201 `{url, sessionId}`; `503` unconfigured |
+| `POST /orgs/:id/subscription/portal` | yes (OWNER) | Stripe Customer Portal session |

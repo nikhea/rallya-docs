@@ -28,3 +28,14 @@ attendee per kit; voided rows free re-issue.
 - Quantity can't drop below the collected count; delete needs zero active
   rows (`422` — void first).
 - Wrong-event refs stealth-404; every mutation is audited.
+
+## Endpoints
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `GET/POST /orgs/:id/events/:eventId/kits` | yes (ADMIN+) | Pro/Scale; tallies included; create → `201` |
+| `PATCH/DELETE .../kits/:kitId` | yes (ADMIN+) | Delete blocked while active collections exist |
+| `POST .../kits/:kitId/collect` | yes (ADMIN+) | `201`; `reserve: true` holds `PENDING`; `422` unless checked-in |
+| `GET .../kits/:kitId/collections` | yes (ADMIN+) | Per-kit collection list |
+| `GET .../kit-collections` | yes (ADMIN+) | `?kitId&status&attendeeId` |
+| `POST .../kit-collections/:collectionId/collect` · `.../void` | yes (ADMIN+) | `PENDING → COLLECTED`; void frees re-issue |
