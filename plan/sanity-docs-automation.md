@@ -1,6 +1,7 @@
 # Sanity docs automation — repo → Sanity → deploy
 
-Status: planned (no implementation yet)
+Status: implemented on `feat/docs-sanity-sync` (steps 1–10); Vercel/GitHub/Sanity
+dashboard setup still pending (see README runbook)
 Branch: `feat/docs-sanity-sync`
 Scope: **`rallya-docs` only.** No changes to `rallya`, the SDK repos, or the docs agent.
 
@@ -84,8 +85,9 @@ Replaces the one-time migrate script.
 
 ### 3. `.github/workflows/docs-sync.yml`
 
-- `push` → `main`, paths: `content/docs/**`, `scripts/**`, `sanity/**`,
-  `package.json`, `bun.lock`, the workflow file itself.
+- `push` → `main` (every push, not just docs paths — this workflow is the only
+  trigger for production deploys, since automatic `main` builds are skipped in
+  Vercel; the sync is a no-op when nothing changed).
 - `workflow_dispatch` for manual runs.
 - `pull_request` (same paths): **`--check` only**, no writes.
 - Push job: `bun install --frozen-lockfile` → `--check` → sync → `curl -fsS -X POST

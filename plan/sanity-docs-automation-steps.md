@@ -5,6 +5,17 @@ Companion: `plan/sanity-docs-automation.md`
 Rule: one commit per step, each independently reviewable and green. No Vercel/Sanity
 dashboard changes live in code — those are runbook steps in step 10.
 
+Progress: steps 1–10 implemented on `feat/docs-sanity-sync`.
+
+Deviations from the original notes:
+- The icon allowlist lives in `sanity/icons.json` (not only `icons.ts`) so the
+  Node script can read one shared list.
+- `@sanity/client` is pinned to the v7 line that `next-sanity` uses; v8 pulled a
+  second client type and broke `sanity/lib/client.ts`.
+- `--check` also rejects `.mdx` files that are missing from `meta.json`, and the
+  icon check found three icons (`FileCode`, `FileCode2`, `FileJson`) missing
+  from the allowlist.
+
 ---
 
 ## 1. `docs(plan): repo to sanity sync automation plan`
@@ -157,7 +168,8 @@ dashboard changes live in code — those are runbook steps in step 10.
 - `.github/workflows/docs-sync.yml`
 
 **Work**
-- Add `push` → `main` (same paths) and `workflow_dispatch`.
+- Add `push` → `main` (every push, because this workflow is the only production
+  deploy trigger once automatic `main` builds are skipped) and `workflow_dispatch`.
 - Add `concurrency: { group: docs-sync, cancel-in-progress: false }`.
 - Job: `bun install --frozen-lockfile` → `--check` → `sync:docs --prune` →
   `curl -fsS -X POST "$VERCEL_DEPLOY_HOOK_URL"`.

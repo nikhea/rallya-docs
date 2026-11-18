@@ -7,8 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "sync:docs": "node scripts/sync-docs-to-sanity.mjs",
-    "migrate:docs": "node scripts/migrate-docs-to-sanity.mjs"
+    "sync:docs": "node scripts/sync-docs-to-sanity.mjs"
   },
   "dependencies": {
     "@assistant-ui/ai-sdk": "^0.0.16",
