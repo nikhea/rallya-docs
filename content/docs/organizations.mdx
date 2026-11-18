@@ -33,3 +33,23 @@ assigned. Lifecycle is OWNER-only.
 
 Per-org server keys (Pro/Scale) with `object:action` scopes snapshotted at
 creation. Rotation = create new → dual-active grace → revoke old.
+
+## Endpoints
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `POST /orgs` | yes | Caller becomes OWNER |
+| `GET /orgs` | yes | Orgs the caller belongs to |
+| `GET/PATCH/DELETE /orgs/:id` | yes | member / ADMIN+ / OWNER; `:id` is UUID or slug |
+| `GET/POST /orgs/:id/members` | yes | Member read / ADMIN+ add; stealth 404 for outsiders |
+| `PATCH /orgs/:id/members/me` | yes | Own preferences |
+| `PATCH/DELETE /orgs/:id/members/:userId` | yes (ADMIN+ / OWNER) | Self-leave allowed at any role; last OWNER protected |
+| `GET/POST /orgs/:id/invites` · `DELETE /orgs/:id/invites/:inviteId` | yes (ADMIN+) | 7-day TTL; revoke before accept |
+| `POST /orgs/invites/accept` · `POST /orgs/invites/decline` | yes | Account-email match required |
+| `GET/POST /orgs/:id/roles` | yes (OWNER for writes) | Pro/Scale |
+| `PATCH/DELETE /orgs/:id/roles/:role` | yes (OWNER) | Reserved names rejected |
+| `POST /orgs/:id/roles/:role/assign` · `.../unassign` | yes (OWNER) | |
+| `GET/POST /orgs/:id/api-keys` · `DELETE /orgs/:id/api-keys/:keyId` | yes (ADMIN+) | Pro/Scale; raw key shown once |
+| `GET /orgs/:id/audit` | yes (ADMIN+) | Org audit log |
+
+Outsiders get stealth `404`s; quota violations are `402 UPGRADE_REQUIRED`.

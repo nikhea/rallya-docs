@@ -28,3 +28,16 @@ blocked (`422`) while the attendee holds unvoided kit collections.
 
 Check-in is the gate for kit handouts: only `CHECKED_IN` attendees can
 collect. No auto-creation — staff hand out explicitly (see Kits).
+
+## Endpoints
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `GET /attendees/mine`, `GET /attendees/:id` | yes | Owner only |
+| `POST /attendees/:id/cancel` | yes | Owner; flips `CANCELLED`, never deletes |
+| `GET/POST /orgs/:id/events/:eventId/attendees` | yes (ADMIN+) | Roster list; manual walk-ins |
+| `PATCH .../attendees/:attendeeId` | yes (ADMIN+) | Correct attendee details |
+| `POST .../checkin` | yes (ADMIN+) | `{code}` or `{attendeeId}` → 200 + outcome |
+| `POST .../checkin/batch` | yes (ADMIN+) | ≤ 50 scans (`413` over) |
+| `POST .../checkin/revert` | yes (ADMIN+) | `422` unless checked-in or with unvoided kits |
+| `GET .../checkin/stats` | yes (ADMIN+) | `{registered, checkedIn, cancelled, total}` |

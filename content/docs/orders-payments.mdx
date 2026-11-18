@@ -29,3 +29,13 @@ types, 400 on bad signatures.
 Attendee payment is intentionally one-off: no customers, no saved cards, no
 recurring charges. When the organizer's tier attendee cap is hit, buyers
 see `409` fullness — billing state is never exposed to buyers.
+
+## Endpoints
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `POST /events/:id/orders` | yes | Buyer; optional `idempotencyKey` (auto-generated) |
+| `GET /orders/mine`, `GET /orders/:id` | yes | Owner only (stealth 404 for others) |
+| `POST /orders/:id/cancel` | yes | Owner; terminal states reject |
+| `POST /orders/:id/checkout` | yes | Priced orders only → `{url, sessionId}`; `503` when Stripe is unconfigured |
+| `POST /webhooks/stripe` | no | Raw-body Stripe signature check; fulfillment only here |
