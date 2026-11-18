@@ -1,0 +1,74 @@
+name: Docs
+
+on:
+  # Runs on every main push, not just docs paths: this workflow is the only
+  # thing that triggers the production deploy (automatic main builds are
+  # disabled in Vercel so they cannot race the Sanity sync). The sync itself is
+  # a no-op when no page changed.
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "content/docs/**"
+      - "scripts/sync-docs-to-sanity.mjs"
+      - "sanity/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/workflows/docs-sync.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-sync-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate docs
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check frontmatter, slugs, icons and MDX
+        run: bun scripts/sync-docs-to-sanity.mjs --check
+
+  publish:
+    name: Sync Sanity and deploy
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      SANITY_API_WRITE_TOKEN: ${{ secrets.SANITY_API_WRITE_TOKEN }}
+      VERCEL_DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check required secrets
+        run: |
+          test -n "$SANITY_API_WRITE_TOKEN" || { echo "::error::SANITY_API_WRITE_TOKEN is not configured"; exit 1; }
+          test -n "$VERCEL_DEPLOY_HOOK_URL" || { echo "::error::VERCEL_DEPLOY_HOOK_URL is not configured"; exit 1; }
+
+      - name: Validate docs
+        run: bun scripts/sync-docs-to-sanity.mjs --check
+
+      - name: Sync content/docs into Sanity
+        run: bun scripts/sync-docs-to-sanity.mjs --prune
+
+      - name: Trigger production deploy
+        run: curl -fsS -X POST "$VERCEL_DEPLOY_HOOK_URL"

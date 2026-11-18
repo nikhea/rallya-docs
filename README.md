@@ -21,7 +21,7 @@ Open [http://localhost:3000](http://localhost:3000) — `/` redirects to `/docs`
 | `npm run build`           | Production build                               |
 | `npm run start`           | Serve the production build                     |
 | `npm run lint`            | Run ESLint                                     |
-| `npm run migrate:docs`    | One-time import of `content/docs` into Sanity  |
+| `npm run sync:docs`      | Validate and push `content/docs` into Sanity |
 
 ## Ask AI assistant
 
@@ -139,19 +139,77 @@ thread id to `sessionStorage` (one thread per tab session) in
 
 ## Content management
 
-Content lives in Sanity (project **Rallya Docs**, org **rallya**, dataset
-`production`) as `docPage` and `docSection` documents; the embedded studio is
-at [`/studio`](http://localhost:3000/studio). `sanity/schema.ts` defines the
-schemas, `sanity/lib/` the client and GROQ queries, and `lib/source.ts` feeds
-them into the Fumadocs loader (pages are compiled from MDX at build time with
-the same plugin preset the old file-based pipeline used).
+The MDX files in `content/docs/` are the **source of truth**. Every push to
+`main` runs `.github/workflows/docs-sync.yml`, which
 
-Publishing flow: edit in the studio → publish → a Sanity webhook POSTs to
-`/api/sanity-revalidate` (signature checked against `SANITY_REVALIDATE_SECRET`)
-→ the source cache is dropped and affected routes revalidate on next visit.
+1. validates frontmatter, slugs, sidebar icons and MDX compilation (`--check`),
+2. syncs the pages and sections into Sanity (project **Rallya Docs**, org
+   **rallya**, dataset `production`) as `docPage` / `docSection` documents,
+3. deletes Sanity documents removed from the manifest, and
+4. triggers the production deploy with a Vercel deploy hook.
 
-The original MDX files are kept in `content/docs/` for reference only — they
-are not part of the build; Sanity is the source of truth.
+Pushes to Sanity happen before the build, so the static pages and the `llms`
+endpoints always render the content that was just merged.
+
+```
+edit content/docs/*.mdx → PR (--check) → merge to main → sync → deploy
+```
+
+The embedded studio is at [`/studio`](http://localhost:3000/studio).
+`sanity/schema.ts` defines the schemas, `sanity/lib/` the client and GROQ
+queries, and `lib/source.ts` feeds them into the Fumadocs loader (pages are
+compiled from MDX at build time with the same plugin preset the old file-based
+pipeline used).
+
+### When are documents touched?
+
+- Pages are keyed by filename: `content/docs/<slug>.mdx` → `docPage.<slug>`.
+  Renaming the file creates a new document and deletes the old one, so the old
+  URL 404s.
+- Sidebar sections come from `---[Icon]Section---` entries in `meta.json`.
+- The sync stamps every document it writes with `managedBy: "repo"` and a
+  content hash. Unchanged pages are not rewritten.
+- **Only documents stamped `managedBy: "repo"` are updated or deleted.** Pages
+  created directly in Studio are never touched by the sync.
+- **A push to `main` overwrites Sanity for every page present in
+  `content/docs`.** Edit those pages in the repo, not in Studio — Studio edits
+  to repo-managed pages are lost on the next sync.
+- Deletions are scoped: a section is only deleted when no non-synced page still
+  references it.
+
+### Running the sync locally
+
+With `SANITY_API_WRITE_TOKEN` in `.env.local`:
+
+```bash
+node scripts/sync-docs-to-sanity.mjs --check    # validate only, no writes
+node scripts/sync-docs-to-sanity.mjs --dry-run  # list creates/updates/deletes
+node scripts/sync-docs-to-sanity.mjs --prune    # apply, including deletions
+```
+
+Review a `--dry-run --prune` before the first real prune.
+
+### One-time deployment setup
+
+- **Vercel → Settings → Git → Ignored Build Step** — skip automatic builds for
+  `main` so they cannot race the Sanity sync:
+
+  ```sh
+  if [ "$VERCEL_GIT_COMMIT_REF" = "main" ]; then exit 1; else exit 0; fi
+  ```
+
+- **Vercel → Settings → Git → Deploy Hooks** — create a production hook and put
+  its URL in the GitHub secret `VERCEL_DEPLOY_HOOK_URL`.
+- **GitHub → Settings → Secrets and variables → Actions** — add
+  `SANITY_API_WRITE_TOKEN` (Editor role) and `VERCEL_DEPLOY_HOOK_URL`.
+- **Sanity** — keep the webhook to `/api/sanity-revalidate` (it freshens ISR
+  routes); the redeploy is what updates the static pages. Make sure the
+  deployed origin is in the project's CORS origins.
+- `SANITY_REVALIDATE_SECRET` must match between Sanity and the deploy env.
+
+The Sanity webhook and `app/api/sanity-revalidate/route.ts` remain useful, but
+they are not the publishing mechanism: the source cache is per-instance, so a
+rebuild is what guarantees static pages reflect the merge.
 
 ## Authoring fields
 

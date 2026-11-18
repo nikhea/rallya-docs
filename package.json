@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "migrate:docs": "node scripts/migrate-docs-to-sanity.mjs"
+    "sync:docs": "node scripts/sync-docs-to-sanity.mjs"
   },
   "dependencies": {
     "@assistant-ui/ai-sdk": "^0.0.16",
@@ -39,6 +39,7 @@
     "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@sanity/client": "^7.28.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

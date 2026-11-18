@@ -1,37 +1,19 @@
 import { defineField, defineType } from "sanity";
+import { sidebarIcons } from "./icons";
 
-/**
- * Icons referenced by the sidebar. Values are PascalCase lucide-react icon
- * names, resolved at build time by `lucideIconsPlugin()`.
- */
-export const sidebarIcons = [
-  "House",
-  "Rocket",
-  "Blocks",
-  "ShieldCheck",
-  "Building",
-  "Ticket",
-  "CreditCard",
-  "QrCode",
-  "Package",
-  "Wallet",
-  "Code",
-  "Braces",
-  "Wrench",
-  "Route",
-  "Database",
-  "KeyRound",
-  "Server",
-  "Bot",
-  "ShoppingBag",
-  "Hammer",
-  "Library",
-] as const;
+export { sidebarIcons };
 
 export const docSection = defineType({
   name: "docSection",
   title: "Docs Section",
   type: "document",
+  fieldsets: [
+    {
+      name: "system",
+      title: "System",
+      options: { collapsible: true, collapsed: true },
+    },
+  ],
   fields: [
     defineField({
       name: "title",
@@ -54,6 +36,26 @@ export const docSection = defineType({
       type: "number",
       validation: (rule) => rule.required(),
     }),
+    defineField({
+      name: "managedBy",
+      title: "Managed By",
+      type: "string",
+      description:
+        'Set to "repo" by scripts/sync-docs-to-sanity.mjs. Documents without this marker are never overwritten or deleted by the sync.',
+      readOnly: true,
+      hidden: true,
+      fieldset: "system",
+    }),
+    defineField({
+      name: "bodyHash",
+      title: "Body Hash",
+      type: "string",
+      description:
+        "sha256 of the last synced content; used to skip unchanged documents.",
+      readOnly: true,
+      hidden: true,
+      fieldset: "system",
+    }),
   ],
 });
 
@@ -61,6 +63,13 @@ export const docPage = defineType({
   name: "docPage",
   title: "Docs Page",
   type: "document",
+  fieldsets: [
+    {
+      name: "system",
+      title: "System",
+      options: { collapsible: true, collapsed: true },
+    },
+  ],
   fields: [
     defineField({
       name: "title",
@@ -111,6 +120,26 @@ export const docPage = defineType({
       rows: 30,
       description:
         "Markdown/MDX source. Fenced code blocks, tables and links are supported.",
+    }),
+    defineField({
+      name: "managedBy",
+      title: "Managed By",
+      type: "string",
+      description:
+        'Set to "repo" by scripts/sync-docs-to-sanity.mjs. Documents without this marker are never overwritten or deleted by the sync.',
+      readOnly: true,
+      hidden: true,
+      fieldset: "system",
+    }),
+    defineField({
+      name: "bodyHash",
+      title: "Body Hash",
+      type: "string",
+      description:
+        "sha256 of the last synced content; used to skip unchanged documents.",
+      readOnly: true,
+      hidden: true,
+      fieldset: "system",
     }),
   ],
 });
