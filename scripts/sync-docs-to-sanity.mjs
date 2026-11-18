@@ -8,6 +8,8 @@
  * Usage:
  *   node scripts/sync-docs-to-sanity.mjs            # apply changes
  *   node scripts/sync-docs-to-sanity.mjs --dry-run  # print the plan only
+ *   node scripts/sync-docs-to-sanity.mjs --check    # validate only, no writes
+ *   node scripts/sync-docs-to-sanity.mjs --prune    # also delete removed docs
  *
  * Requires SANITY_API_WRITE_TOKEN (in the environment, or .env.local locally).
  * NEXT_PUBLIC_SANITY_PROJECT_ID / NEXT_PUBLIC_SANITY_DATASET fall back to the
@@ -38,6 +40,7 @@ const API_VERSION = "2025-11-01";
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has("--dry-run");
 const checkOnly = args.has("--check");
+const prune = args.has("--prune");
 
 const SIDEBAR_ICONS = new Set(
   JSON.parse(readFileSync(join(rootDir, "sanity/icons.json"), "utf8")),
@@ -325,40 +328,85 @@ async function main() {
   });
 
   const existing = await client.fetch(
-    `*[_type in ["docPage", "docSection"] && managedBy == "repo"]{_id, bodyHash}`,
+    `*[_type in ["docPage", "docSection"] && managedBy == "repo"]{_id, _type, bodyHash}`,
   );
   const existingHash = new Map(existing.map((doc) => [doc._id, doc.bodyHash]));
+  const existingIds = new Set(existing.map((doc) => doc._id));
 
   const writes = docs.filter((doc) => existingHash.get(doc._id) !== doc.bodyHash);
   const unchanged = docs.length - writes.length;
 
+  // Pruning is scoped to documents this pipeline created. Studio-created docs
+  // have no `managedBy` marker and are never considered.
+  const desiredIds = new Set(docs.map((doc) => doc._id));
+  const stale = existing.filter((doc) => !desiredIds.has(doc._id));
+
+  // A section that disappeared from meta.json can only be deleted if no page
+  // outside the pipeline still references it.
+  let blockedSections = new Set();
+  const staleSections = stale.filter((doc) => doc._type === "docSection");
+  if (staleSections.length > 0) {
+    const managedPageIds = existing
+      .filter((doc) => doc._type === "docPage")
+      .map((doc) => doc._id);
+    const referenced = await client.fetch(
+      `*[_type == "docPage" && !(_id in $managedPageIds) && defined(section)].section._ref`,
+      { managedPageIds },
+    );
+    blockedSections = new Set(referenced);
+  }
+
+  const deletions = stale.filter(
+    (doc) => !(doc._type === "docSection" && blockedSections.has(doc._id)),
+  );
+  const blockedDeletions = stale.length - deletions.length;
+
   console.log(
     `Sanity ${projectId}/${dataset}: ${sections.length} sections, ${pages.length} pages`,
   );
-  console.log(`${writes.length} to write, ${unchanged} unchanged`);
+  console.log(
+    `${writes.length} to write, ${unchanged} unchanged, ${deletions.length} to delete` +
+      (blockedDeletions > 0
+        ? ` (${blockedDeletions} kept: still referenced)`
+        : ""),
+  );
 
-  if (writes.length > 0) {
-    for (const doc of writes) {
-      const action = existingHash.has(doc._id) ? "update" : "create";
-      console.log(`  ${action}: ${doc._id}`);
-    }
+  for (const doc of writes) {
+    const action = existingIds.has(doc._id) ? "update" : "create";
+    console.log(`  ${action}: ${doc._id}`);
+  }
+  for (const doc of deletions) {
+    console.log(`  delete: ${doc._id}`);
   }
 
+  if (deletions.length > 0 && !prune) {
+    console.log("Removed docs were found; re-run with --prune to delete them.");
+  }
+
+  const applyingDeletions = prune && deletions.length > 0;
+
   if (dryRun) {
-    console.log("Dry run: no documents were written.");
+    console.log("Dry run: no documents were written or deleted.");
     return;
   }
 
-  if (writes.length === 0) {
+  if (writes.length === 0 && !applyingDeletions) {
     console.log("Nothing to do.");
     return;
   }
 
   const transaction = client.transaction();
   for (const doc of writes) transaction.createOrReplace(doc);
+  if (applyingDeletions) {
+    for (const doc of deletions) transaction.delete(doc._id);
+  }
   await transaction.commit();
 
-  console.log(`Synced ${writes.length} document(s).`);
+  console.log(
+    `Synced ${writes.length} document(s)` +
+      (applyingDeletions ? `, deleted ${deletions.length}` : "") +
+      ".",
+  );
 }
 
 main().catch((error) => {
