@@ -20,6 +20,7 @@ import { MarkdownText } from "@/components/assistant-ui/elements/markdown-text";
 // the plumbing. Uncomment these imports (and the branches below) to bring the
 // tool cards back.
 // import { ToolFallback } from "@/components/assistant-ui/elements/tool-fallback.aui";
+import { FeedbackDialog } from "@/components/assistant-ui/elements/feedback-dialog";
 import { MessageFeedbackPanel } from "@/components/assistant-ui/elements/message-feedback.aui";
 // import {
 //   ToolGroupContent,
@@ -69,6 +70,7 @@ import {
 import {
   createContext,
   useContext,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -609,6 +611,14 @@ const AssistantMessage: FC = () => {
   } = useContext(ThreadComponentsContext);
   const groupBy = TaskGroupComponent ? taskAwareGroupBy : messageGroupBy;
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // 👍 has no follow-up form, so show the same "Thanks — your feedback was
+  // sent." confirmation the 👎 panel uses, then hide it after 1.5s.
+  const [positiveSent, setPositiveSent] = useState(false);
+  useEffect(() => {
+    if (!positiveSent) return;
+    const id = window.setTimeout(() => setPositiveSent(false), 1500);
+    return () => window.clearTimeout(id);
+  }, [positiveSent]);
   // One activity line for the whole turn: runs while tools work and hides as
   // soon as answer text starts streaming. Message-level on purpose — a
   // per-group line would blink between consecutive tool calls.
@@ -733,19 +743,26 @@ const AssistantMessage: FC = () => {
           <BranchPicker />
           <AssistantActionBar
             onNegativeFeedbackToggle={() => setFeedbackOpen((v) => !v)}
+            onPositiveFeedback={() => setPositiveSent(true)}
           />
         </div>
         {feedbackOpen && (
           <MessageFeedbackPanel onClose={() => setFeedbackOpen(false)} />
+        )}
+        {positiveSent && (
+          <div data-slot="aui_message-feedback" className="mb-1 pt-1">
+            <FeedbackDialog reasons={[]} selected={[]} note="" sent />
+          </div>
         )}
       </div>
     </MessagePrimitive.Root>
   );
 };
 
-const AssistantActionBar: FC<{ onNegativeFeedbackToggle: () => void }> = ({
-  onNegativeFeedbackToggle,
-}) => {
+const AssistantActionBar: FC<{
+  onNegativeFeedbackToggle: () => void;
+  onPositiveFeedback: () => void;
+}> = ({ onNegativeFeedbackToggle, onPositiveFeedback }) => {
   const negativeSubmitted = useAuiState(
     (s) => s.message.metadata.submittedFeedback?.type === "negative",
   );
@@ -762,7 +779,7 @@ const AssistantActionBar: FC<{ onNegativeFeedbackToggle: () => void }> = ({
                       <CopyIcon className="animate-in zoom-in-75 fade-in duration-150" />
                     </AuiIf></ActionBarPrimitive.Copy>
       <AuiIf condition={(s) => s.thread.capabilities.feedback}>
-        <ActionBarPrimitive.FeedbackPositive render={<TooltipIconButton tooltip="Helpful" className="data-[submitted=true]:bg-accent data-[submitted=true]:text-accent-foreground" />}><ThumbsUpIcon /></ActionBarPrimitive.FeedbackPositive>
+        <ActionBarPrimitive.FeedbackPositive onClick={onPositiveFeedback} render={<TooltipIconButton tooltip="Helpful" className="data-[submitted=true]:bg-accent data-[submitted=true]:text-accent-foreground" />}><ThumbsUpIcon /></ActionBarPrimitive.FeedbackPositive>
         <TooltipIconButton
           tooltip="Not helpful — tell us why"
           aria-pressed={negativeSubmitted}
