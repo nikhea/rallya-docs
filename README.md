@@ -101,22 +101,36 @@ reply / on hover). 👍 sends immediately; 👎 opens an inline panel with reaso
 pills and a comment box (the comment is joined from the pills + note and capped
 at 1000 chars). Both are recorded in Mastra observability as a `thumbs`
 feedback record (`value` ±1) anchored to the message's `traceId` — the same
-trace the run reports — with `feedbackSource: "user"`, `entityId:
-"docs-agent"`, and `feedbackUserId` set to the anonymous visitor id.
+trace the run reports — with `feedbackSource: "user"` and `feedbackUserId` set
+to the anonymous visitor id. The agent/entity on the record comes from the
+traced docs-agent run.
 
-The browser never calls Mastra's observability API directly: a same-origin
-Route Handler (`/api/docs-feedback`) validates the traceId, confirms the trace
-belongs to `docs-agent`, then writes via `mastraClient.createFeedback` with a
-server-only `DOCS_AGENT_ADMIN_TOKEN` (the same token as the visitor-meta
-route). A direct browser → Mastra call would 401 when SimpleAuth is on; the
-proxy keeps the token private. The send is fire-and-forget (React Query
-`useMutation`, retry 1): failures log a warning and chat is unaffected.
-Feedback shows up in Studio (trace → Feedback) and via
+The browser posts directly to the docs agent's public `POST /docs-feedback`
+route (the same Mastra server as `/docs-chat`; override the URL with
+`NEXT_PUBLIC_DOCS_FEEDBACK_URL` if needed). That route rehydrates the trace
+from observability storage and writes through
+`mastra.observability.addFeedback()`, so the record flows through the
+observability event bus to Mastra Platform and shows up in Studio. The send is
+fire-and-forget (React Query `useMutation`, retry 1): failures log a warning
+and chat is unaffected. Feedback is also readable via
 `GET /api/observability/feedback?traceId=…`.
 
-The Mastra server does **not** need code changes, but its CORS must allow the
-docs origin. Dev defaults to `*` via `DOCS_CHAT_CORS_ORIGINS`; set it to the
-docs origin in production (e.g. `DOCS_CHAT_CORS_ORIGINS=https://<docs-domain>`).
+The legacy same-origin `app/api/docs-feedback/route.ts` handler (which wrote
+via `mastraClient.createFeedback` with a server-only token) is kept in the
+repo but no longer called by the chat; the old fetch is commented out in
+`docs-assistant.tsx` as a rollback path.
+
+Restored conversations keep their feedback anchors too: Mastra's stored
+messages do not retain the stream's `messageMetadata`, so `/api/docs-memory`
+matches each assistant reply to its thread trace by run timestamp and attaches
+`metadata.custom.traceId` before the client seeds the runtime. Replies whose
+trace has aged out of observability retention stay unanchored, and their thumbs
+submission is skipped.
+
+The docs agent exposes public `POST /docs-chat` and `POST /docs-feedback`
+routes, and its CORS must allow the docs origin for both. Dev defaults to `*`
+via `DOCS_CHAT_CORS_ORIGINS`; set it to the docs origin in production (e.g.
+`DOCS_CHAT_CORS_ORIGINS=https://<docs-domain>`).
 
 Thread growth: Mastra Memory stores one thread per runtime thread the browser
 creates, with no anonymous-thread cleanup. If that becomes a concern, scope the

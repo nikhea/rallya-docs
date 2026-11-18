@@ -19,6 +19,21 @@ import { getOrCreateVisitorId } from "@/lib/visitor";
 const DOCS_CHAT_URL =
   process.env.NEXT_PUBLIC_DOCS_CHAT_URL ?? "http://localhost:4111/docs-chat";
 
+/**
+ * The docs agent's public `POST /docs-feedback` route. It sits next to
+ * `/docs-chat` on the same Mastra server, so derive it from the chat URL
+ * unless an explicit override is provided.
+ */
+const DOCS_FEEDBACK_URL = (() => {
+  const explicit = process.env.NEXT_PUBLIC_DOCS_FEEDBACK_URL;
+  if (explicit) return explicit;
+  try {
+    return new URL("/docs-feedback", DOCS_CHAT_URL).toString();
+  } catch {
+    return "/docs-feedback";
+  }
+})();
+
 type DocsThreadSnapshot = {
   thread: { id: string; title: string | null; updatedAt: string | null } | null;
   messages: UIMessage[];
@@ -122,24 +137,43 @@ const ChatSurface: React.FC<{
   onNewThread,
   onPanelOpenChange,
 }) => {
-  // Thumbs feedback on any reply posts to the same-origin /api/docs-feedback
-  // proxy (server-held Mastra token). Fire-and-forget via React Query: never
-  // blocks or crashes the chat.
+  // Thumbs feedback on any reply posts directly to the docs agent's public
+  // POST /docs-feedback route (same origin as the chat stream). That route
+  // writes through `mastra.observability.addFeedback()`, so the record reaches
+  // Mastra Platform/Studio rather than only observability storage.
+  // Fire-and-forget via React Query: never blocks or crashes the chat.
   const feedbackMutation = useMutation({
     mutationFn: async (payload: {
       traceId: string;
       type: "positive" | "negative";
       comment?: string;
     }) => {
-      const res = await fetch("/api/docs-feedback", {
+      const visitorId = getOrCreateVisitorId();
+      const res = await fetch(DOCS_FEEDBACK_URL, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          ...payload,
-          visitorId: getOrCreateVisitorId() || undefined,
+          traceId: payload.traceId,
+          feedbackType: "thumbs",
+          value: payload.type === "positive" ? 1 : -1,
+          ...(payload.comment ? { comment: payload.comment } : {}),
+          ...(visitorId ? { feedbackUserId: visitorId } : {}),
         }),
       });
       if (!res.ok) throw new Error(`docs-feedback responded ${res.status}`);
+
+      // --- Old same-origin proxy (superseded by the agent endpoint above) ---
+      // Kept commented out until the new route has been verified in production;
+      // `app/api/docs-feedback/route.ts` still exists for rollback.
+      // const res = await fetch("/api/docs-feedback", {
+      //   method: "POST",
+      //   headers: { "content-type": "application/json" },
+      //   body: JSON.stringify({
+      //     ...payload,
+      //     visitorId: getOrCreateVisitorId() || undefined,
+      //   }),
+      // });
+      // if (!res.ok) throw new Error(`docs-feedback responded ${res.status}`);
     },
     retry: 1,
     onError: (error) => {
